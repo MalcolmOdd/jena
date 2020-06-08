@@ -165,11 +165,6 @@ public class ShaclPaths {
                 return path;
             }
         }
-
-        //RDFDataMgr.write(System.out,  graph, Lang.TTL);
-
-//        List<Node> x = G.find(graph, node, null, null).mapWith(Triple::getPredicate).toList();
-//        throw new ShaclParseException("Bad list: "+ShLib.displayStr(node)+" : "+x);
         throw new ShaclParseException("Bad list: "+ShLib.displayStr(node));
     }
 
@@ -279,11 +274,12 @@ SHACL Property path: [ sh:alternativePath ( ex:father ex:mother  ) ]
 
         @Override
         public void visit(P_Alt pathAlt) {
+            // [ sh:alternativePath ( elt1 elt2 ) ]
             Node n1 = pathToRDF$(pathAlt.getLeft());
             Node n2 = pathToRDF$(pathAlt.getRight());
             Node list = list(acc, n1, n2);
+            point = NodeFactory.createBlankNode();
             Triple t = Triple.create(point, SHACL.alternativePath, list);
-            point = list;
             acc.accept(t);
         }
 

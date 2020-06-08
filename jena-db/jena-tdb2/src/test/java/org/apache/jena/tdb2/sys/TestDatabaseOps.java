@@ -125,6 +125,21 @@ public class TestDatabaseOps
     }
 
     @Test public void compact_prefixes_3() {
+        // 2020-04:
+        // This test fails at "HERE" sometimes with an NPE at the marked line when run with Java14 on ASF Jenkins.
+        // The NPE is from java.nio.file.Files.provider.
+        // It does not fail anywhere else and it does not always fail.
+        //   This suggests it is an environmental issue with the JDK14 job.
+        // Attempt to find out what is going on:
+        try {
+            compact_prefixes_3_test();
+        } catch (Throwable th) {
+            th.printStackTrace();
+            throw th;
+        }
+    }
+
+    private void compact_prefixes_3_test() {
         // prefixes across compaction.
         DatasetGraph dsg = DatabaseMgr.connectDatasetGraph(dir);
         Graph g = dsg.getDefaultGraph();
@@ -139,7 +154,7 @@ public class TestDatabaseOps
         DatasetGraph dsg1 = dsgs.get();
         Location loc1 = ((DatasetGraphTDB)dsg1).getLocation();
 
-        DatabaseMgr.compact(dsgs);
+        DatabaseMgr.compact(dsgs); // HERE
 
         Graph g2 = dsgs.getDefaultGraph();
 
@@ -147,8 +162,6 @@ public class TestDatabaseOps
             assertEquals("ex", g2.getPrefixMapping().getNsURIPrefix("http://example/"));
             assertEquals("http://example/", g2.getPrefixMapping().getNsPrefixURI("ex"));
         });
-
-
 
         // Check is not attached to the old graph.
         DatasetGraph dsgOld = StoreConnection.connectCreate(loc1).getDatasetGraph();

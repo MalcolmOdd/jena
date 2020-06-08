@@ -20,9 +20,7 @@ package org.apache.jena.riot.system;
 
 import org.apache.jena.datatypes.RDFDatatype;
 import org.apache.jena.datatypes.xsd.XSDDatatype;
-import org.apache.jena.graph.Node;
-import org.apache.jena.graph.NodeFactory;
-import org.apache.jena.graph.Triple;
+import org.apache.jena.graph.*;
 import org.apache.jena.iri.IRI;
 import org.apache.jena.query.ARQ;
 import org.apache.jena.riot.RiotException;
@@ -34,8 +32,8 @@ import org.apache.jena.sparql.core.Quad;
 import org.apache.jena.sparql.util.Context;
 import org.apache.jena.sparql.util.FmtUtils;
 
-/** 
- * {@link ParserProfileStd} uses a {@link FactoryRDF} to 
+/**
+ * {@link ParserProfileStd} uses a {@link FactoryRDF} to
  * create items in the parsing process.
  */
 public class ParserProfileStd implements ParserProfile
@@ -47,8 +45,9 @@ public class ParserProfileStd implements ParserProfile
     private final PrefixMap    prefixMap;
     private final boolean      strictMode;
     private final boolean      checking;
+    private boolean allowNodeExtentions;
 
-    public ParserProfileStd(FactoryRDF factory, ErrorHandler errorHandler, 
+    public ParserProfileStd(FactoryRDF factory, ErrorHandler errorHandler,
                             IRIResolver resolver, PrefixMap prefixMap,
                             Context context, boolean checking, boolean strictMode) {
         this.factory = factory;
@@ -58,8 +57,9 @@ public class ParserProfileStd implements ParserProfile
         this.context = context;
         this.checking = checking;
         this.strictMode = strictMode;
+        this.allowNodeExtentions = true; //(context.isTrue(RIOT.ALLOW_NODE_EXT)) ;
     }
-    
+
     @Override
     public FactoryRDF getFactorRDF() {
         return factory;
@@ -77,16 +77,17 @@ public class ParserProfileStd implements ParserProfile
 
     @Override
     public String resolveIRI(String uriStr, long line, long col) {
-        return makeIRI(uriStr, line, col).toString();
+        return internalMakeIRI(uriStr, line, col).toString();
     }
 
     @Override
-    public void setIRIResolver(IRIResolver resolver) {
-        this.resolver = resolver; 
+    public void setBaseIRI(String baseIRI) {
+        IRI iri = resolver.resolve(baseIRI);
+        this.resolver = IRIResolver.create(iri);
+
     }
 
-    @Override
-    public IRI makeIRI(String uriStr, long line, long col) {
+    private IRI internalMakeIRI(String uriStr, long line, long col) {
         IRI iri = resolver.resolveSilent(uriStr);
         // Some specific problems and specific error messages,.
         if ( uriStr.contains(" ") ) {
@@ -104,7 +105,7 @@ public class ParserProfileStd implements ParserProfile
         return iri;
     }
 
-    /** Create a triple - this operation call {@link #checkTriple} if checking is enabled. */ 
+    /** Create a triple - this operation call {@link #checkTriple} if checking is enabled. */
     @Override
     public Triple createTriple(Node subject, Node predicate, Node object, long line, long col) {
         if ( checking )
@@ -112,22 +113,30 @@ public class ParserProfileStd implements ParserProfile
         return factory.createTriple(subject, predicate, object);
     }
 
+    private boolean allowSpecialNode(Node node) {
+        return this.allowNodeExtentions && node instanceof Node_Ext<?>;
+    }
+
     protected void checkTriple(Node subject, Node predicate, Node object, long line, long col) {
         if ( subject == null || (!subject.isURI() && !subject.isBlank()) ) {
-            errorHandler.error("Subject is not a URI or blank node", line, col);
-            throw new RiotException("Bad subject: " + subject);
+            if ( ! allowSpecialNode(subject) ) {
+                errorHandler.error("Subject is not a URI or blank node", line, col);
+                throw new RiotException("Bad subject: " + subject);
+            }
         }
         if ( predicate == null || (!predicate.isURI()) ) {
             errorHandler.error("Predicate not a URI", line, col);
             throw new RiotException("Bad predicate: " + predicate);
         }
         if ( object == null || (!object.isURI() && !object.isBlank() && !object.isLiteral()) ) {
-            errorHandler.error("Object is not a URI, blank node or literal", line, col);
-            throw new RiotException("Bad object: " + object);
+            if ( ! allowSpecialNode(object) ) {
+                errorHandler.error("Object is not a URI, blank node or literal", line, col);
+                throw new RiotException("Bad object: " + object);
+            }
         }
     }
 
-    /** Create a quad - this operation call {@link #checkTriple} if checking is enabled. */ 
+    /** Create a quad - this operation call {@link #checkTriple} if checking is enabled. */
     @Override
     public Quad createQuad(Node graph, Node subject, Node predicate, Node object, long line, long col) {
         if ( checking )
@@ -148,7 +157,7 @@ public class ParserProfileStd implements ParserProfile
     public Node createURI(String x, long line, long col) {
         // Special cases that don't resolve.
         //   <_:....> is a blank node.
-        //   <::...> is "don't touch" used for a fixed-up prefix name 
+        //   <::...> is "don't touch" used for a fixed-up prefix name
         if ( !RiotLib.isBNodeIRI(x) && !RiotLib.isPrefixIRI(x) )
             // Really is an URI!
             x = resolveIRI(x, line, col);
@@ -175,17 +184,6 @@ public class ParserProfileStd implements ParserProfile
         return factory.createStringLiteral(lexical);
     }
 
-    /** Special token forms */
-    @Override
-    public Node createNodeFromToken(Node scope, Token token, long line, long col) {
-        // OFF - Don't produce Node.ANY by default.
-        if ( false && token.getType() == TokenType.KEYWORD ) {
-            if ( Token.ImageANY.equals(token.getImage()) )
-                return Node.ANY;
-        }
-        return null;
-    }
-
     @Override
     public Node createBlankNode(Node scope, String label, long line, long col) {
         // No checks
@@ -196,6 +194,32 @@ public class ParserProfileStd implements ParserProfile
     public Node createBlankNode(Node scope, long line, long col) {
         // No checks
         return factory.createBlankNode();
+    }
+
+    @Override
+    public Node createTripleNode(Node subject, Node predicate, Node object, long line, long col) {
+        return NodeFactory.createTripleNode(subject, predicate, object);
+    }
+
+    @Override
+    public Node createTripleNode(Triple triple, long line, long col) {
+        return NodeFactory.createTripleNode(triple);
+    }
+
+    @Override
+    public Node createGraphNode(Graph graph, long line, long col) {
+        return NodeFactory.createGraphNode(graph);
+    }
+
+    /** Special token forms */
+    @Override
+    public Node createNodeFromToken(Node scope, Token token, long line, long col) {
+        // OFF - Don't produce Node.ANY by default.
+        if ( false && token.getType() == TokenType.KEYWORD ) {
+            if ( Token.ImageANY.equals(token.getImage()) )
+                return Node.ANY;
+        }
+        return null;
     }
 
     @Override
@@ -224,7 +248,6 @@ public class ParserProfileStd implements ParserProfile
             case LITERAL_DT : {
                 Token tokenDT = token.getSubToken2();
                 String uriStr;
-
                 switch (tokenDT.getType()) {
                     case IRI :
                         uriStr = tokenDT.getImage();
@@ -238,7 +261,6 @@ public class ParserProfileStd implements ParserProfile
                     default :
                         throw new RiotException("Expected IRI for datatype: " + token);
                 }
-
                 uriStr = resolveIRI(uriStr, tokenDT.getLine(), tokenDT.getColumn());
                 RDFDatatype dt = NodeFactory.getType(uriStr);
                 return createTypedLiteral(str, dt, line, col);
@@ -249,10 +271,10 @@ public class ParserProfileStd implements ParserProfile
 
             case STRING :
                 return createStringLiteral(str, line, col);
-                
+
             case BOOLEAN :
                 return createTypedLiteral(str, XSDDatatype.XSDboolean, line, col);
-                
+
             default : {
                 Node x = createNodeFromToken(currentGraph, token, line, col);
                 if ( x != null )

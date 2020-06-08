@@ -25,7 +25,7 @@
   <parent>
     <groupId>org.apache.jena</groupId>
     <artifactId>jena</artifactId>
-    <version>3.15.0-SNAPSHOT</version>
+    <version>3.16.0-SNAPSHOT</version>
     <relativePath>..</relativePath>
   </parent>
 
@@ -41,31 +41,37 @@
     <dependency>
       <groupId>org.apache.jena</groupId>
       <artifactId>jena-text</artifactId>
-      <version>3.15.0-SNAPSHOT</version>
+      <version>3.16.0-SNAPSHOT</version>
     </dependency>
     
     <!-- Testing support -->
     <dependency>
       <groupId>org.apache.jena</groupId>
       <artifactId>jena-base</artifactId>
-      <version>3.15.0-SNAPSHOT</version>
+      <version>3.16.0-SNAPSHOT</version>
       <classifier>tests</classifier>
       <scope>test</scope>
     </dependency>
 
-    
-    <!-- Elasticsearch client -->
+    <!-- Elasticsearch dependencies -->
+
     <dependency>
       <groupId>org.elasticsearch.client</groupId>
       <artifactId>transport</artifactId>
+      <version>${ver.elasticsearch}</version> 
       <exclusions>
-        <!-- Take "jackson" that comes via jsonld-java
-             At Jena 3.7.0 that is jsonld-java v0.11.1 depends on jackson 2.9.0
-             whereas elasticsearch depends on jackson 2.8.6
-        -->
+        <!-- Take "jackson" that comes via Jena parent POM (aligned to jsonld-java) -->
         <exclusion>
           <groupId>com.fasterxml.jackson.core</groupId>
           <artifactId>jackson-core</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.logging</groupId>
+          <artifactId>log4j-api</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.logging</groupId>
+          <artifactId>log4j-core</artifactId>
         </exclusion>
       </exclusions>
     </dependency>
@@ -74,18 +80,24 @@
       <groupId>org.apache.logging.log4j</groupId>
       <artifactId>log4j-api</artifactId>
     </dependency>
+
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-core</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <scope>test</scope>
+    </dependency>
     
     <dependency>
       <groupId>org.apache.logging.log4j</groupId>
-      <artifactId>log4j-to-slf4j</artifactId>
+      <artifactId>log4j-slf4j-impl</artifactId>
+      <scope>test</scope>
     </dependency>
-    
-    <!-- Convert commons logging to SLF4J -->
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>jcl-over-slf4j</artifactId>
-    </dependency>
-    
+
   </dependencies>
   
   <build>
@@ -135,11 +147,14 @@
           </execution>
         </executions>
       </plugin>
+
       <plugin>
         <groupId>com.github.alexcojocaru</groupId>
         <artifactId>elasticsearch-maven-plugin</artifactId>
-        <!-- REPLACE THE FOLLOWING WITH THE PLUGIN VERSION YOU NEED -->
-        <version>${ver.elasticsearch.maven.plugin}</version>
+        <!-- Can't use ${ver.elasticsearch.maven.plugin} 
+             enforcer-plugin fails the whole system build 
+        -->
+        <version>6.8</version>
         <configuration>
           <clusterName>elasticsearch</clusterName>
           <transportPort>9500</transportPort>

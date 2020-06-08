@@ -214,7 +214,7 @@ public class ARQ
 
     /**
      * Indicate whether duplicate select and groupby variables are allowed.
-     * If false, duplicates are silently supressed; it's not an error.
+     * If false, duplicates are silently suppressed; it's not an error.
      */
     public static final boolean allowDuplicateSelectColumns = false ;
 
@@ -460,14 +460,14 @@ public class ARQ
     public static final Symbol optMergeBGPs = SystemARQ.allocSymbol("optMergeBGPs");
 
     /**
-     * Context key controlling whether the standard optimizater applies the optimization
+     * Context key controlling whether the standard optimizer applies the optimization
      * to combine stacks of (extend) into one compound operation.  Ditto (assign).
      * <p>By default, this transformation is applied.
      */
     public static final Symbol optMergeExtends = SystemARQ.allocSymbol("optMergeExtends");
 
     /**
-     * Context key controlling whether the standard optimizater applies the optimization
+     * Context key controlling whether the standard optimizer applies the optimization
      * to reorder basic graph patterns.
      * <p>By default, this transformation is NOT applied.
      * It is left to the specific engines to decide.

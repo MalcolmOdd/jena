@@ -86,7 +86,7 @@ public class RiotLib
      */
     public static Node createIRIorBNode(String str) {
         // Is it a bNode label? i.e. <_:xyz>
-        if ( isBNodeIRI(str) ) {
+        if ( skolomizedBNodes && isBNodeIRI(str) ) {
             String s = str.substring(bNodeLabelStart.length());
             Node n = NodeFactory.createBlankNode(s);
             return n;
@@ -96,7 +96,7 @@ public class RiotLib
 
     /** Test whether a IRI is a ARQ-encoded blank node. */
     public static boolean isBNodeIRI(String iri) {
-        return skolomizedBNodes && iri.startsWith(bNodeLabelStart);
+        return iri.startsWith(bNodeLabelStart);
     }
     
     private static final String URI_PREFIX_FIXUP = "::";
@@ -342,45 +342,51 @@ public class RiotLib
         }
     }
 
-    /** Write prefixes, using {@code PREFIX} */ 
+    /** Write prefixes */ 
     public static void writePrefixes(IndentedWriter out, PrefixMap prefixMap, boolean newStyle) {
-        if ( newStyle )
-            writePrefixesNewStyle(out, prefixMap);
-        else
-            writePrefixesOldStyle(out, prefixMap);
-    }
-    
-    /** Write prefixes, using {@code PREFIX} */ 
-    private static void writePrefixesNewStyle(IndentedWriter out, PrefixMap prefixMap) {
         if ( prefixMap != null && !prefixMap.isEmpty() ) {
-            for ( Map.Entry<String, String> e : prefixMap.getMappingCopyStr().entrySet() ) {
-                out.print("PREFIX ");
-                out.print(e.getKey());
-                out.print(": ");
-                out.pad(PREFIX_IRI);
-                out.print("<");
-                out.print(e.getValue());
-                out.print(">");
-                out.println();
+            for ( Map.Entry<String, String> e : prefixMap.getMapping().entrySet() ) {
+                if ( newStyle )
+                    writePrefixNewStyle(out, e.getKey(), e.getValue());
+                else
+                    writePrefixOldStyle(out, e.getKey(), e.getValue());
             }
         }
+    }
+    
+    /** Write a prefix.
+     * Write using {@code @prefix} or {@code PREFIX}.
+     */ 
+    public static void writePrefix(IndentedWriter out, String prefix, String uri, boolean newStyle) {
+        if ( newStyle )
+            writePrefixNewStyle(out, prefix, uri);
+        else
+            writePrefixOldStyle(out, prefix, uri);
+    }
+
+    /** Write prefix, using {@code PREFIX} */ 
+    private static void writePrefixNewStyle(IndentedWriter out, String prefix, String uri) {
+        out.print("PREFIX ");
+        out.print(prefix);
+        out.print(": ");
+        out.pad(PREFIX_IRI);
+        out.print("<");
+        out.print(uri);
+        out.print(">");
+        out.println();
     }
 
     /** Write prefixes, using {@code @prefix} */ 
-    public static void writePrefixesOldStyle(IndentedWriter out, PrefixMap prefixMap) {
-        if ( prefixMap != null && !prefixMap.isEmpty() ) {
-            for ( Map.Entry<String, String> e : prefixMap.getMappingCopyStr().entrySet() ) {
-                out.print("@prefix ");
-                out.print(e.getKey());
-                out.print(": ");
-                out.pad(PREFIX_IRI);
-                out.print("<");
-                out.print(e.getValue());
-                out.print(">");
-                out.print(" .");
-                out.println();
-            }
-        }
+    public static void writePrefixOldStyle(IndentedWriter out, String prefix, String uri) {
+        out.print("@prefix ");
+        out.print(prefix);
+        out.print(": ");
+        out.pad(PREFIX_IRI);
+        out.print("<");
+        out.print(uri);
+        out.print(">");
+        out.print(" .");
+        out.println();
     }
 
     /** Returns dataset that wraps a graph
@@ -399,7 +405,7 @@ public class RiotLib
 
     public static int calcWidth(PrefixMap prefixMap, String baseURI, Node p)
     {
-        if ( ! prefixMap.contains(rdfNS) && RDF_type.equals(p) )
+        if ( ! prefixMap.containsPrefix(rdfNS) && RDF_type.equals(p) )
             return 1;
         
         String x = prefixMap.abbreviate(p.getURI());

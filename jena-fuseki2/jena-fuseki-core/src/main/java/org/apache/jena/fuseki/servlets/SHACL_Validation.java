@@ -19,7 +19,7 @@
 package org.apache.jena.fuseki.servlets;
 
 import static java.lang.String.format;
-import static org.apache.jena.fuseki.servlets.ActionLib.getOneHeader;
+import static org.apache.jena.fuseki.servlets.GraphTarget.determineTarget;
 
 import org.apache.jena.atlas.web.MediaType;
 import org.apache.jena.fuseki.DEF;
@@ -32,14 +32,16 @@ import org.apache.jena.riot.web.HttpNames;
 import org.apache.jena.shacl.ShaclValidator;
 import org.apache.jena.shacl.Shapes;
 import org.apache.jena.shacl.ValidationReport;
-import org.apache.jena.sparql.core.DatasetGraph;
 import org.apache.jena.web.HttpSC;
 
 /**
  * SHACL validation service. Receives a shapes file and validates a graph named in the
  * {@code ?graph=} parameter.
+ * <p>
  * {@code ?graph=} can be any graph name, or one of the words "default" or "union" (without quotes)
  * to indicate the default graph, which is also the default and the dataset union graph.
+ * <p>
+ * Optional parameter {@code ?target=} specifies the target node for the validation report. 
  */
 public class SHACL_Validation extends BaseActionREST { //ActionREST {
 
@@ -52,13 +54,28 @@ public class SHACL_Validation extends BaseActionREST { //ActionREST {
         Lang lang = RDFLanguages.contentTypeToLang(mediaType.getContentType());
         if ( lang == null )
             lang = RDFLanguages.TTL;
+        
+        String targetNodeStr = action.getRequest().getParameter(HttpNames.paramTarget);
 
         action.beginRead();
         try {
-            Graph data = determineTarget(action.getActiveDSG(), action);
+            GraphTarget graphTarget = determineTarget(action.getActiveDSG(), action);
+            if ( ! graphTarget.exists() )
+                ServletOps.errorNotFound("No data graph: "+graphTarget.label());
+            Graph data = graphTarget.graph();
             Graph shapesGraph = ActionLib.readFromRequest(action, Lang.TTL);
+            
+            Node targetNode = null;
+            if ( targetNodeStr != null ) {
+                String x = data.getPrefixMapping().expandPrefix(targetNodeStr);
+                targetNode = NodeFactory.createURI(x);
+            }
+            
             Shapes shapes = Shapes.parse(shapesGraph);
-            ValidationReport report = ShaclValidator.get().validate(shapesGraph, data);
+            ValidationReport report = ( targetNode == null )
+                ? ShaclValidator.get().validate(shapesGraph, data)
+                : ShaclValidator.get().validate(shapesGraph, data, targetNode);
+            
             if ( report.conforms() )
                 action.log.info(format("[%d] shacl: conforms", action.id));
             else
@@ -67,28 +84,8 @@ public class SHACL_Validation extends BaseActionREST { //ActionREST {
             action.response.setStatus(HttpSC.OK_200);
             MediaType mt = ActionLib.contentNegotationRDF(action);
             ActionLib.graphResponse(action, report.getGraph(), lang);
-            //} catch (Throwable th) {
         } finally {
             action.endRead();
         }
     }
-
-    protected final static Graph determineTarget(DatasetGraph dsg, HttpAction action) {
-        boolean dftGraph = getOneHeader(action.request, HttpNames.paramGraphDefault) != null ;
-        String graphName = getOneHeader(action.request, HttpNames.paramGraph) ;
-        if ( dftGraph && graphName != null )
-            ServletOps.errorBadRequest("Both default graph and named graph specified") ;
-        if ( dftGraph )
-            graphName = HttpNames.valueDefault;
-        if ( graphName == null )
-            graphName = HttpNames.valueDefault;
-        // ?graph=
-        if ( graphName.equals(HttpNames.valueDefault ) )
-            return dsg.getDefaultGraph();
-        if ( graphName.equals("union") )
-            return dsg.getUnionGraph();
-        Node gn = NodeFactory.createURI(graphName);
-        return dsg.getGraph(gn);
-    }
-
 }

@@ -33,6 +33,7 @@ import org.apache.jena.atlas.data.ThresholdPolicyFactory ;
 import org.apache.jena.atlas.iterator.Iter ;
 import org.apache.jena.atlas.lib.Pair ;
 import org.apache.jena.atlas.lib.Sink ;
+import org.apache.jena.atlas.logging.Log;
 import org.apache.jena.atlas.web.TypedInputStream;
 import org.apache.jena.graph.Graph ;
 import org.apache.jena.graph.GraphUtil ;
@@ -50,8 +51,6 @@ import org.apache.jena.sparql.engine.binding.Binding ;
 import org.apache.jena.sparql.engine.binding.BindingRoot ;
 import org.apache.jena.sparql.graph.GraphFactory ;
 import org.apache.jena.sparql.graph.GraphOps ;
-import org.apache.jena.sparql.graph.NodeTransform;
-import org.apache.jena.sparql.graph.NodeTransformLib ;
 import org.apache.jena.sparql.modify.request.* ;
 import org.apache.jena.sparql.syntax.Element ;
 import org.apache.jena.sparql.syntax.ElementGroup ;
@@ -437,11 +436,6 @@ public class UpdateEngineWorker implements UpdateVisitor
         return g;
     }
 
-    protected static List<Quad> unused_convertBNodesToVariables(List<Quad> quads) {
-        NodeTransform bnodesToVariables = new NodeTransformBNodesToVariables();
-        return NodeTransformLib.transformQuads(bnodesToVariables, quads);
-    }
-
     protected Element elementFromQuads(List<Quad> quads) {
         ElementGroup el = new ElementGroup();
         ElementTriplesBlock x = new ElementTriplesBlock();
@@ -544,7 +538,7 @@ public class UpdateEngineWorker implements UpdateVisitor
     // Catch all individual deletes of quads
     private static void deleteFromDatasetGraph(DatasetGraph datasetGraph, Quad quad) {
         if ( datasetGraph instanceof DatasetGraphReadOnly )
-            System.err.println("READ ONLY") ;
+            Log.warn(UpdateEngineWorker.class, "Read only dataset");
         datasetGraph.delete(quad);
     }
 
@@ -555,7 +549,7 @@ public class UpdateEngineWorker implements UpdateVisitor
         query.setQueryPattern(pattern);
         query.setQuerySelectType();
         query.setQueryResultStar(true);
-        query.setResultVars();
+        query.resetResultVars();
         return query;
     }
 

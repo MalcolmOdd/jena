@@ -128,7 +128,7 @@ public class SPARQL_Upload extends ActionService
 
         Node gn = null;
         if ( graphName != null ) {
-            gn = graphName.equals(HttpNames.valueDefault)
+            gn = graphName.equals(HttpNames.graphTargetDefault)
                 ? Quad.defaultGraphNodeGenerated
                 : NodeFactory.createURI(graphName);
         }
@@ -139,7 +139,6 @@ public class SPARQL_Upload extends ActionService
                 FusekiNetLib.addDataInto(dataTmp.getDefaultGraph(), action.getActiveDSG(), gn);
             else
                 FusekiNetLib.addDataInto(dataTmp, action.getActiveDSG());
-
             action.commit();
             return count;
         } catch (RuntimeException ex) {

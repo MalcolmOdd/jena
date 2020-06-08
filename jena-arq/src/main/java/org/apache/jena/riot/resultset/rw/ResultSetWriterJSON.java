@@ -29,33 +29,36 @@ import org.apache.jena.atlas.io.IO;
 import org.apache.jena.atlas.io.IndentedWriter;
 import org.apache.jena.atlas.json.io.JSWriter;
 import org.apache.jena.atlas.logging.Log;
+import org.apache.jena.graph.Node;
+import org.apache.jena.graph.Node_Triple;
+import org.apache.jena.graph.Triple;
 import org.apache.jena.query.ARQ;
-import org.apache.jena.query.QuerySolution;
 import org.apache.jena.query.ResultSet;
-import org.apache.jena.rdf.model.Literal;
-import org.apache.jena.rdf.model.RDFNode;
-import org.apache.jena.rdf.model.Resource;
 import org.apache.jena.rdf.model.impl.Util;
 import org.apache.jena.riot.out.NodeToLabel;
 import org.apache.jena.riot.resultset.ResultSetLang;
 import org.apache.jena.riot.resultset.ResultSetWriter;
 import org.apache.jena.riot.resultset.ResultSetWriterFactory;
 import org.apache.jena.riot.system.SyntaxLabels;
-import org.apache.jena.sparql.resultset.ResultSetApply;
+import org.apache.jena.sparql.core.Var;
+import org.apache.jena.sparql.engine.binding.Binding;
 import org.apache.jena.sparql.resultset.ResultSetException;
-import org.apache.jena.sparql.resultset.ResultSetProcessor;
 import org.apache.jena.sparql.util.Context;
 
+/** Write results in {@code application/sparql-results+json} format. */
 public class ResultSetWriterJSON implements ResultSetWriter {
 
     public static ResultSetWriterFactory factory = lang->{
         if (!Objects.equals(lang, ResultSetLang.SPARQLResultSetJSON ) )
-            throw new ResultSetException("ResultSetWriter for JSON asked for a "+lang); 
-        return new ResultSetWriterJSON(); 
+            throw new ResultSetException("ResultSetWriter for JSON asked for a "+lang);
+        return new ResultSetWriterJSON();
     };
-    
-    private ResultSetWriterJSON() {}
-    
+
+    private ResultSetWriterJSON() { }
+
+    // We use an inner object for writing of one result set so that the
+    // ResultSetWriter has no per-write state variables.
+
     @Override
     public void write(Writer out, ResultSet resultSet, Context context) {
         throw new UnsupportedOperationException("Writing JSON results to a java.io.Writer. Use an OutputStream.") ;
@@ -63,226 +66,308 @@ public class ResultSetWriterJSON implements ResultSetWriter {
 
     @Override
     public void write(OutputStream outStream, boolean result, Context context) {
-        JSWriter out = new JSWriter(outStream);
-        out.startOutput();
-        out.startObject();
-        out.key(kHead);
-        out.startObject();
-        out.finishObject();
-        out.pair(kBoolean, result);
-        out.finishObject();
-        out.finishOutput();
-        IO.flush(outStream);
+        try {
+            JSWriter out = new JSWriter(outStream);
+            out.startOutput();
+            out.startObject();
+            out.key(kHead);
+            out.startObject();
+            out.finishObject();
+            out.pair(kBoolean, result);
+            out.finishObject();
+            out.finishOutput();
+        } finally {
+            IO.flush(outStream);
+        }
     }
-    
+
     @Override
-    public void write(OutputStream out, ResultSet resultSet, Context context) {
-        JSONOutputResultSet jsonOut = new JSONOutputResultSet(out, context);
-        ResultSetApply a = new ResultSetApply(resultSet, jsonOut);
-        a.apply();
+    public void write(OutputStream outStream, ResultSet resultSet, Context context) {
+        IndentedWriter out = new IndentedWriter(outStream);
+        try {
+            ResultSetWriterTableJSON x = new ResultSetWriterTableJSON(out, context);
+            x.write(resultSet);
+        }
+        finally {
+            IO.flush(out);
+        }
     }
 
-    private static class JSONOutputResultSet implements ResultSetProcessor {
-        private static final boolean multiLineValues   = false;
-        private static final boolean multiLineVarNames = false;
-
-        private final IndentedWriter out;
+    // Create once per write call.
+    // This holds the state of the writing of one ResultSet.
+    static class ResultSetWriterTableJSON {
         private final NodeToLabel    labels;
+        private final  IndentedWriter out;
+        /** Control whether the type/literal/fileds all go on one line. */
+        private static final boolean MultiLineValues   = false;
+        /** Control whether variables in header are one per line (minor). */
+        private static final boolean MultiLineVarNames = false;
 
-        private JSONOutputResultSet(OutputStream outStream, Context context) {
+        private static final int MainIndent = 2 ;
+        private static final int VarIndent = 2 ;
+        private static final int OuterIndent = Math.min(2, MainIndent);
+
+        private ResultSetWriterTableJSON(OutputStream outStream, Context context) {
             this(new IndentedWriter(outStream), context);
         }
 
-        private JSONOutputResultSet(IndentedWriter indentedOut, Context context) {
+        private ResultSetWriterTableJSON(IndentedWriter indentedOut, Context context) {
             out = indentedOut;
+            out.setUnitIndent(MainIndent);
+
             boolean outputGraphBNodeLabels = (context != null) && context.isTrue(ARQ.outputGraphBNodeLabels);
             labels = outputGraphBNodeLabels
                 ? SyntaxLabels.createNodeToLabelAsGiven()
-                : SyntaxLabels.createNodeToLabel();
+                    : SyntaxLabels.createNodeToLabel();
         }
 
-        @Override
-        public void start(ResultSet rs) {
-            println("{");
-            out.incIndent();
-            doHead(rs);
-            println(quoteName(kResults), ": {");
-            out.incIndent();
-            println(quoteName(kBindings), ": [");
-            out.incIndent();
-            firstSolution = true;
+        private void write(ResultSet resultSet) {
+            print(out, "{");
+            out.incIndent(OuterIndent);
+            //incIndent(out);
+            writeHeader(resultSet);
+            println(out, " ,");
+            writeRows(out, resultSet);
+            out.decIndent(OuterIndent);
+            println(out, "}");      // top level {}
         }
 
-        @Override
-        public void finish(ResultSet rs) {
-            // Close last binding.
-            out.println();
 
-            out.decIndent();    // bindings
-            println("]");
-            out.decIndent();
-            println("}");       // results
-            out.decIndent();
-            println("}");       // top level {}
-            out.flush();
+        private void writeRows(IndentedWriter out2, ResultSet resultSet) {
+            println(out, quoteName(kResults), ": {");
+            incIndent(out);
+            println(out, quoteName(kBindings), ": [");
+            incIndent(out);
+
+            boolean firstRow = true;
+            for ( ; resultSet.hasNext() ; ) {
+                Binding binding = resultSet.nextBinding();
+                if ( !firstRow )
+                    println(out, " ,");
+                writeRow(out, resultSet, binding);
+                firstRow = false;
+            }
+            println(out);
+            decIndent(out);
+            println(out, "]");      // bindings
+            decIndent(out);
+            println(out, "}");      // results
+            //decIndent(out);
         }
 
-        private void doHead(ResultSet rs) {
-            println(quoteName(kHead),": {");
-            out.incIndent();
-            doLink(rs);
-            doVars(rs);
-            out.decIndent();
-            println("} ,");
+        // Write policy - write objects, leave point of output just after the closing "}"
+
+        private void writeHeader(ResultSet rs) {
+            println(out, quoteName(kHead),": {");
+            incIndent(out);
+            writeHeaderLink(out, rs);
+            writeHeaderVars(out, rs);
+            decIndent(out);
+            print(out, "}");
         }
 
-        private void doLink(ResultSet rs) {
+        private static void writeHeaderLink(IndentedWriter out, ResultSet rs) {
             // ---- link
-            // out.println("\"link\": []") ;
+            // out.println("\"link\": [] ,") ;
         }
 
-        private void doVars(ResultSet rs) {
+        //  "var": [  ... ]
+        private static void writeHeaderVars(IndentedWriter out, ResultSet rs) {
             // On one line.
-            print(quoteName(kVars), ": [ ");
-            if ( multiLineVarNames )
-                out.println();
-            out.incIndent();
+            print(out, quoteName(kVars), ": [ ");
+            if ( MultiLineVarNames )
+                println(out);
+            incIndent(out);
             for ( Iterator<String> iter = rs.getResultVars().iterator() ; iter.hasNext() ; ) {
                 String varname = iter.next();
-                print("\"", varname, "\"");
-                if ( multiLineVarNames )
-                    println();
+                print(out, "\"", varname, "\"");
                 if ( iter.hasNext() )
-                    print(" , ");
+                    print(out, " , ");
+                if ( MultiLineVarNames )
+                    println(out);
             }
-            println(" ]");
-            out.decIndent();
+            decIndent(out);
+            println(out, " ]");
         }
 
-        boolean firstSolution          = true;
-        boolean firstBindingInSolution = true;
+        private void writeRow(IndentedWriter out, ResultSet resultSet, Binding binding) {
+            print(out, "{ ");
+            //incIndent(out);
+            out.incIndent(VarIndent);
+            boolean firstInRow = true;
+            // Print in the order seen in the header.
+            for ( Iterator<String> iter = resultSet.getResultVars().iterator() ; iter.hasNext() ; ) {
+                Var var = Var.alloc(iter.next());
+                Node value = binding.get(var);
+                if ( value == null )
+                    continue;
+                if ( ! firstInRow )
+                    print(out, " ,");
+                writeVarValue(out, var, value, firstInRow);
+                firstInRow = false;
+            }
 
-        // NB assumes are on end of previous line.
-        @Override
-        public void start(QuerySolution qs) {
-            if ( !firstSolution )
-                println(" ,");
-            firstSolution = false;
-            println("{");
-            out.incIndent();
-            firstBindingInSolution = true;
+            if ( false ) {
+                // Print "missing" variables.
+                // If the header is right, this should not be necessary.
+                for ( Iterator<Var> vars = binding.vars() ; vars.hasNext() ; ) {
+                    Var var = vars.next();
+                    if ( ! resultSet.getResultVars().contains(var.getName()) ) {
+                        Node value = binding.get(var);
+                        if ( ! firstInRow )
+                            println(out, " ,");
+                        writeVarValue(out, var, value, firstInRow);
+                        firstInRow = false;
+                    }
+                }
+            }
+            println(out);
+            out.decIndent(VarIndent);
+            //decIndent(out);
+            print(out, "}");
         }
 
-        @Override
-        public void finish(QuerySolution qs) {
-            println(); // Finish last binding
-            out.decIndent();
-            print("}"); // NB No newline
-        }
-
-        @Override
-        public void binding(String varName, RDFNode value) {
+        /* Write one JSON member (key, value pair in a JSON object)
+         * i.e.    "var": { ... term ... }
+         * Separating comma handled by caller writeRow
+         */
+        private void writeVarValue(IndentedWriter out, Var var, Node value, boolean firstInRow) {
             if ( value == null )
+                // Skip if no value.
                 return;
-
-            if ( !firstBindingInSolution )
-                println(" ,");
-            firstBindingInSolution = false;
-
+            println(out);
             // Do not use quoteName - varName may not be JSON-safe as a bare name.
-            print(quote(varName), ": { ");
-            if ( multiLineValues )
-                out.println();
+            print(out, quote(var.getVarName()), ": ");
+            writeValue(out, value, MultiLineValues);
+            // No newline - allow for " ,"
+        }
 
-            out.incIndent();
-            // Old, explicit unbound
+        private void writeValue(IndentedWriter out, Node value, boolean multiLine) {
+            if ( multiLine || value.isNodeTriple() )
+                println(out, "{");
+            else
+                print(out, "{ ");
+            incIndent(out);
+            // Explicit unbound
             // if ( value == null )
-            //     printUnbound() ;
+            //     writeValueUnbound(out) ;
             // else
             if ( value.isLiteral() )
-                printLiteral((Literal)value);
-            else if ( value.isResource() )
-                printResource((Resource)value);
+                writeValueLiteral(out, value, multiLine);
+            else if ( value.isURI() )
+                writeValueURI(out, value, multiLine);
+            else if ( value.isBlank() )
+                writeValueBlankNode(out, value, multiLine);
+            else if ( value.isNodeTriple() )
+                writeValueNodeTriple(out, value, multiLine);
+            else if ( value.isNodeGraph() )
+                writeValueNodeGraph(out, value, multiLine);
             else
-                Log.warn(this, "Unknown RDFNode type in result set: " + value.getClass());
-            out.decIndent();
-
-            if ( !multiLineValues )
-                print(" ");
-            print("}"); // NB No newline
+                Log.warn(ResultSetWriterJSON.class, "Unknown RDFNode type in result set: " + value.getClass());
+            if ( multiLine || value.isNodeTriple()) // OR triple
+                println(out) ;
+            else
+                print(out, " ");
+            decIndent(out);
+            print(out, "}");
         }
 
-         private void printUnbound() {
-             print(quoteName(kType), ": ", quote(kUnbound), " , ") ;
-             if ( multiLineValues ) 
-                 println() ;
-             print(quoteName(kValue), ": null") ;
-             if ( multiLineValues )
-                 println() ;
-         }
+        // On entry to writeTerm : ready to start the "type" field.
 
-        private void printLiteral(Literal literal) {
-            String datatype = literal.getDatatypeURI();
-            String lang = literal.getLanguage();
+        private void writeValueUnbound(IndentedWriter out, boolean multiLine) {
+            print(out, quoteName(kType), ": ", quote(kUnbound), " , ") ;
+            if ( MultiLineValues )
+                println(out) ;
+            print(out, quoteName(kValue), ": null") ;
+        }
+
+        private void writeValueLiteral(IndentedWriter out, Node literal, boolean multiLine) {
+            String datatype = literal.getLiteralDatatypeURI();
+            String lang = literal.getLiteralLanguage();
 
             if ( Util.isSimpleString(literal) || Util.isLangString(literal) ) {
-                print(quoteName(kType), ": ", quote(kLiteral), " , ");
-                if ( multiLineValues )
-                    println();
+                print(out, quoteName(kType), ": ", quote(kLiteral), " , ");
+                if ( multiLine )
+                    println(out);
 
                 if ( lang != null && !lang.equals("") ) {
-                    print(quoteName(kXmlLang), ": ", quote(lang), " , ");
-                    if ( multiLineValues )
-                        println();
+                    print(out, quoteName(kXmlLang), ": ", quote(lang), " , ");
+                    if ( multiLine )
+                        println(out);
                 }
             } else {
-                print(quoteName(kType), ": ", quote(kLiteral), " , ");
-                if ( multiLineValues )
-                    println();
+                print(out, quoteName(kType), ": ", quote(kLiteral), " , ");
+                if ( MultiLineValues )
+                    println(out);
 
-                print(quoteName(kDatatype), ": ", quote(datatype), " , ");
-                if ( multiLineValues )
-                    println();
+                print(out, quoteName(kDatatype), ": ", quote(datatype), " , ");
+                if ( multiLine )
+                    println(out);
             }
 
-            print(quoteName(kValue), ": ", quote(literal.getLexicalForm()));
-            if ( multiLineValues )
-                println();
+            print(out, quoteName(kValue), ": ", quote(literal.getLiteralLexicalForm()));
         }
 
-        private void printResource(Resource resource) {
-            if ( resource.isAnon() ) {
-                String label = labels.get(null, resource.asNode());
-                // Comes with leading "_:"
-                label = label.substring(2);
+        private void writeValueBlankNode(IndentedWriter out, Node resource, boolean multiLine) {
+            String label = labels.get(null, resource);
+            // Comes with leading "_:"
+            label = label.substring(2);
 
-                print(quoteName(kType), ": ", quote(kBnode), " , ");
-                if ( multiLineValues )
-                    out.println();
-
-                print(quoteName(kValue), ": ", quote(label));
-
-                if ( multiLineValues )
-                    println();
-            } else {
-                print(quoteName(kType), ": ", quote(kUri), " , ");
-                if ( multiLineValues )
-                    println();
-                print(quoteName(kValue), ": ", quote(resource.getURI()));
-                if ( multiLineValues )
-                    println();
-                return;
-            }
-        }
-        
-        private void print(String... strings) {
-            for ( String s : strings )
-                out.print(s);
+            print(out, quoteName(kType), ": ", quote(kBnode), " , ");
+            if ( multiLine )
+                println(out);
+            print(out, quoteName(kValue), ": ", quote(label));
         }
 
-        private void println(String... strings) {
-            print(strings);
-            out.println();
+        private void writeValueURI(IndentedWriter out, Node resource, boolean multiLine) {
+            print(out, quoteName(kType), ": ", quote(kUri), " , ");
+            if ( multiLine )
+                println(out);
+            print(out, quoteName(kValue), ": ", quote(resource.getURI()));
+            return;
+        }
+
+        private void writeValueNodeTriple(IndentedWriter out, Node value, boolean multiLine) {
+            Triple triple = Node_Triple.triple(value);
+            print(out, quoteName(kType), ": ", quote(kTriple), " , ");
+            println(out);
+
+            //if ( multiLineValues )
+            // println(out);
+            print(out, quoteName(kValue), ": ");
+
+            // Allow for different multiline choice for triple components
+            boolean multiLineInnerValue = multiLine;
+
+            // Start of triple object.
+            // ----
+            println(out, "{");
+            incIndent(out);
+
+            // ---
+            print(out, quoteName(kSubject), ": ");
+            print(out, " ");
+
+            writeValue(out, triple.getSubject(), multiLineInnerValue);
+            println(out, " ,");
+
+            print(out, quoteName(kProperty), ": ");
+            writeValue(out, triple.getPredicate(), multiLineInnerValue);
+            println(out, " ,");
+
+            print(out, quoteName(kObject), ": ");
+            print(out, "  ");
+            writeValue(out, triple.getObject(), multiLineInnerValue);
+            // End of triple object.
+            decIndent(out);
+            println(out);
+            print(out, "}");
+            // ----
+            return;
+        }
+
+        private void writeValueNodeGraph(IndentedWriter out, Node value, boolean multiLine) {
+            throw new UnsupportedOperationException("Graph terms");
         }
 
         private static String quote(String string) {
@@ -300,6 +385,26 @@ public class ResultSetWriterJSON implements ResultSetWriter {
             // but need the "" added.
             //return "\""+string+"\"";
             return quote(string);
+        }
+
+        // Intercept all operations - development assistance.
+
+        private static void incIndent(IndentedWriter out) {
+            out.incIndent();
+        }
+
+        private static void decIndent(IndentedWriter out) {
+            out.decIndent();
+        }
+
+        private static void print(IndentedWriter out, String... strings) {
+            for ( String s : strings )
+                out.print(s);
+        }
+
+        private static void println(IndentedWriter out, String... strings) {
+            print(out, strings);
+            out.println();
         }
     }
 }

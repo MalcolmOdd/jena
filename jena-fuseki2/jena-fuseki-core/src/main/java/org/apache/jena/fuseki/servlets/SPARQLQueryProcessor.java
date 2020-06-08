@@ -92,13 +92,11 @@ public abstract class SPARQLQueryProcessor extends ActionService
     *  </ul>
     *  The default implementation calculates this list of parameters once (on first use).
     */
-    private Set<String> acceptedParams_ = null;
+    private volatile Set<String> acceptedParams_ = null;
     protected Collection<String> acceptedParams(HttpAction action) {
         if ( acceptedParams_ == null ) {
             synchronized(this) {
                 if ( acceptedParams_ == null )
-                    // Does not matter about race condition here because the same Set should be
-                    // created on any call to generateAcceptedParams.
                     acceptedParams_ = generateAcceptedParams();
             }
         }
@@ -372,7 +370,7 @@ public abstract class SPARQLQueryProcessor extends ActionService
         if ( timeoutParameter != null )
             desiredTimeoutStr = timeoutParameter;
 
-        // Merge (new timeoutw can't be greater than current settings for qExec
+        // Merge (new timeout can't be greater than current settings for qExec)
         EngineLib.parseSetTimeout(qExec, desiredTimeoutStr, TimeUnit.SECONDS, true);
     }
 

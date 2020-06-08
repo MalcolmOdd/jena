@@ -29,14 +29,12 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.apache.jena.atlas.io.IO;
 import org.apache.jena.fuseki.system.FusekiNetLib;
-import org.apache.jena.riot.Lang;
-import org.apache.jena.riot.RDFLanguages;
-import org.apache.jena.riot.RDFParser;
-import org.apache.jena.riot.RiotException;
+import org.apache.jena.riot.*;
 import org.apache.jena.riot.system.ErrorHandler;
 import org.apache.jena.riot.system.StreamRDF;
 import org.apache.jena.riot.system.StreamRDFWriter;
 
+/** Validate data - report in HTML */
 public class DataValidatorHTML
 {
     private DataValidatorHTML()
@@ -86,7 +84,7 @@ public class DataValidatorHTML
 
             // Need to escape HTML.
             OutputStream output1 = new OutputStreamNoHTML(new BufferedOutputStream(outStream));
-            StreamRDF output = StreamRDFWriter.getWriterStream(output1, Lang.NQUADS);
+            StreamRDF output = StreamRDFWriter.getWriterStream(output1, Lang.NQUADS, RIOT.getContext());
             try {
                 startFixed(outStream);
                 @SuppressWarnings("deprecation")
@@ -136,7 +134,6 @@ public class DataValidatorHTML
 
         @Override
         public void write(int b) throws IOException {
-            //System.err.printf("0x%02X\n", b);
             if ( b == '&' )      writeEsc(escAmp);
             else if ( b == '>' ) writeEsc(escGT);
             else if ( b == '<' ) writeEsc(escLT);

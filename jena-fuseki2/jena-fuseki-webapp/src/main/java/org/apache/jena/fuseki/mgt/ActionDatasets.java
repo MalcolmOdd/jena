@@ -22,7 +22,6 @@ import static java.lang.String.format;
 import static org.apache.jena.fuseki.build.FusekiPrefixes.PREFIXES;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.StringReader;
 import java.nio.file.Files;
@@ -65,7 +64,6 @@ import org.apache.jena.rdf.model.*;
 import org.apache.jena.riot.*;
 import org.apache.jena.riot.system.StreamRDF;
 import org.apache.jena.riot.system.StreamRDFLib;
-import org.apache.jena.shared.uuid.JenaUUID;
 import org.apache.jena.sparql.core.DatasetGraph;
 import org.apache.jena.sparql.core.Quad;
 import org.apache.jena.sparql.core.assembler.AssemblerUtils;
@@ -124,7 +122,7 @@ public class ActionDatasets extends ActionContainerItem {
 
     @Override
     protected JsonValue execPostContainer(HttpAction action) {
-        JenaUUID uuid = JenaUUID.generate();
+        UUID uuid = UUID.randomUUID();
         DatasetDescriptionMap registry = new DatasetDescriptionMap();
 
         ContentType ct = ActionLib.getContentType(action);
@@ -157,7 +155,7 @@ public class ActionDatasets extends ActionContainerItem {
             // ----
             // Keep a persistent copy immediately.  This is not used for
             // anything other than being "for the record".
-            systemFileCopy = FusekiWebapp.dirFileArea.resolve(uuid.asString()).toString();
+            systemFileCopy = FusekiWebapp.dirFileArea.resolve(uuid.toString()).toString();
             try ( OutputStream outCopy = IO.openOutputFile(systemFileCopy) ) {
                 RDFDataMgr.write(outCopy, model, Lang.TURTLE);
             }
@@ -531,10 +529,6 @@ public class ActionDatasets extends ActionContainerItem {
             ServletOps.errorBadRequest("Unknown content type for triples: " + ct);
             return;
         }
-        InputStream input = null;
-        try { input = request.getInputStream(); }
-        catch (IOException ex) { IO.exception(ex); }
-
         // Don't log - assemblers are typically small.
         // Adding this to the log confuses things.
         // Reserve logging for data uploads.
@@ -548,6 +542,6 @@ public class ActionDatasets extends ActionContainerItem {
 //                                ct.getCharset(), lang.getName()));
 //        }
         dest.prefix("root", base+"#");
-        ActionLib.parse(action, dest, input, lang, base);
+        ActionLib.parseOrError(action, dest, lang, base);
     }
 }

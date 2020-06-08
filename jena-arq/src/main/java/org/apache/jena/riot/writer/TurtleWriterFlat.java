@@ -25,15 +25,14 @@ import org.apache.jena.riot.system.StreamRDFOps ;
 import org.apache.jena.riot.system.StreamRDF ;
 import org.apache.jena.sparql.util.Context ;
 
-/** Write Turtle with one triple on one line with prefixed names, with short form literals (e.g. integers) */   
+/** Write Turtle with one triple on one line with prefixed names, with short form literals (e.g. integers) */
 public class TurtleWriterFlat extends TurtleWriterBase
 {
     @Override
     protected void output(IndentedWriter out, Graph graph, PrefixMap prefixMap, String baseURI, Context context) {
-        StreamRDF dest = new WriterStreamRDFFlat(out) ;
+        StreamRDF dest = new WriterStreamRDFFlat(out, context) ;
         dest.start() ;
-        dest.base(baseURI) ;
-        StreamRDFOps.sendGraphToStream(graph, dest, prefixMap) ;
+        StreamRDFOps.sendGraphToStream(graph, dest, baseURI, prefixMap) ;
         dest.finish() ;
     }
 }

@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.jena.arq.querybuilder.AbstractQueryBuilder;
+import org.apache.jena.arq.querybuilder.Converters;
 import org.apache.jena.arq.querybuilder.ExprFactory;
 import org.apache.jena.arq.querybuilder.handlers.WhereHandler;
 import org.apache.jena.graph.FrontsTriple;
@@ -111,7 +112,7 @@ public interface WhereClause<T extends AbstractQueryBuilder<T>> {
 	 *            The variable or collection to add.
 	 * @return The builder for chaining.
 	 * @see AbstractQueryBuilder#makeNode(Object)
-	 * @see AbstractQueryBuilder#makeVar(Object)
+	 * @see Converters#makeVar(Object)
 	 */
 	public T addWhereValueVar(Object var);
 	
@@ -131,7 +132,7 @@ public interface WhereClause<T extends AbstractQueryBuilder<T>> {
 	 * @param values The values for the variable          
 	 * @return The builder for chaining.
 	 * @see AbstractQueryBuilder#makeNode(Object)
-	 * @see AbstractQueryBuilder#makeVar(Object)
+	 * @see Converters#makeVar(Object)
 	 */
 	public T addWhereValueVar(Object var, Object... values);
 	
@@ -163,7 +164,7 @@ public interface WhereClause<T extends AbstractQueryBuilder<T>> {
 	 *            The data table to add.
 	 * @return The builder for chaining.
 	 * @see AbstractQueryBuilder#makeNode(Object)
-	 * @see AbstractQueryBuilder#makeVar(Object)
+	 * @see Converters#makeVar(Object)
 	 */
 	public <K extends Collection<?>> T addWhereValueVars(Map<?,K> dataTable);
 	

@@ -73,7 +73,7 @@ public class TestSyntaxTransform
 
     @Test public void subst_query_10() {
         testQuery("SELECT * { SELECT ?o {} }", 
-                  "SELECT * {{SELECT (1 as ?o) {}}}",
+                  "SELECT * { SELECT (1 as ?o) {}}",
                   "o", "1");
     }
 
@@ -145,6 +145,14 @@ public class TestSyntaxTransform
         map.put(Var.alloc(varStr), SSE.parseNode(valStr)) ;
         
         Query qTrans = QueryTransformOps.transform(q1, map) ;
+        
+        if ( ! qExpected.equals(qTrans) ) {
+            System.out.println(qExpected.getProject());
+            System.out.print(qExpected);
+            System.out.println(qTrans.getProject());
+            System.out.print(qTrans);
+        }
+        
         assertEquals(qExpected, qTrans) ;
     }
 

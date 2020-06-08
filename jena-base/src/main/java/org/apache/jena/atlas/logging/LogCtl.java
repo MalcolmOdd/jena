@@ -18,102 +18,144 @@
 
 package org.apache.jena.atlas.logging;
 
-import java.io.* ;
-import java.nio.file.Files ;
-import java.nio.file.Path ;
-import java.nio.file.Paths ;
-import java.util.Properties ;
+import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
-import org.apache.jena.atlas.AtlasException ;
-import org.apache.jena.atlas.lib.StrUtils ;
-import org.apache.log4j.PropertyConfigurator ;
-import org.apache.log4j.xml.DOMConfigurator ;
-import org.slf4j.Logger ;
+import org.apache.jena.atlas.AtlasException;
+import org.apache.jena.atlas.io.IO;
+import org.apache.jena.atlas.lib.StrUtils;
+import org.slf4j.Logger;
 
-/** Setup and control of logging - needs access to log4j binaries */ 
+/** Setup and control of logging - needs access to log4j2 binaries */ 
 public class LogCtl {
-
-    static public void set(Logger logger, String level) {
-        setLevel(logger.getName(), level) ;
-    }
-
-    /** @deprecated Use {@link #setLevel(String, String)} */
-    @Deprecated
-    static public void set(Class<? > logger, String level) {
-        setLevel(logger.getName(), level) ;
-    }
-
-    /** @deprecated Use {@link #setLevel(String, String)} */
-    @Deprecated
-    static public void set(String logger, String level) {
-        setLevel(logger,level) ;
-    }
-
-    static public void setLevel(Class<? > logger, String level) {
-        setLevel(logger.getName(), level) ;
-    }
     
-    static public void setLevel(String logger, String level) {
-        setLevelLog4j(logger,level) ;
-        setLevelJUL(logger,level) ;
-    }
-
-    private static void setLevelJUL(String logger, String levelName) {
-        java.util.logging.Level level = java.util.logging.Level.ALL ;
-        if ( levelName.equalsIgnoreCase("info") )
-            level = java.util.logging.Level.INFO ;
-        else if ( levelName.equalsIgnoreCase("debug") )
-            level = java.util.logging.Level.FINE ;
-        else if ( levelName.equalsIgnoreCase("warn") || levelName.equalsIgnoreCase("warning") ) 
-            level = java.util.logging.Level.WARNING ;
-        else if ( levelName.equalsIgnoreCase("error") )
-            level = java.util.logging.Level.SEVERE ;
-        else if ( levelName.equalsIgnoreCase("OFF") )
-            level = java.util.logging.Level.OFF ;
-        if ( level != null )
-            java.util.logging.Logger.getLogger(logger).setLevel(level) ;
-    }
-
-    private static void setLevelLog4j(String logger, String levelName) {
+    private static final boolean hasLog4j1 = hasClass("org.slf4j.impl.Log4jLoggerFactory");
+    private static final boolean hasLog4j2 = hasClass("org.apache.logging.slf4j.Log4jLoggerFactory");
+    // JUL always present.
+    
+    private static boolean hasClass(String className) {
         try {
-            org.apache.log4j.Level level = org.apache.log4j.Level.ALL ;
-            if ( levelName.equalsIgnoreCase("info") )
-                level = org.apache.log4j.Level.INFO ;
-            else if ( levelName.equalsIgnoreCase("debug") )
-                level = org.apache.log4j.Level.DEBUG ;
-            else if ( levelName.equalsIgnoreCase("warn") || levelName.equalsIgnoreCase("warning") )
-                level = org.apache.log4j.Level.WARN ;
-            else if ( levelName.equalsIgnoreCase("error") )
-                level = org.apache.log4j.Level.ERROR ;
-            else if ( levelName.equalsIgnoreCase("OFF") )
-                level = org.apache.log4j.Level.OFF ;
-            if ( level != null )   
-                org.apache.log4j.LogManager.getLogger(logger).setLevel(level) ;            
-        } catch (NoClassDefFoundError ex) {
-            // For when it is not on the class path 
+            Class.forName(className);
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
         }
     }
 
-    /** @deprecated Do not use - to be removed - use {@link #setLevel(String, String)} */
-    @Deprecated
-    static public void logLevel(String logger, org.apache.log4j.Level level1, java.util.logging.Level level2) {
-        if ( level1 != null )
-            org.apache.log4j.LogManager.getLogger(logger).setLevel(level1) ;
-        if ( level2 != null )
-            java.util.logging.Logger.getLogger(logger).setLevel(level2) ;
+    static public void set(Logger logger, String level) {
+        setLevel(logger.getName(), level);
+    }
+
+    static public void setLevel(Class<? > logger, String level) {
+        setLevel(logger.getName(), level);
+    }
+    
+    static public void setLevel(Logger logger, String level) {
+        setLevel(logger.getName(), level);
+    }
+    
+    static public void setLevel(String logger, String level) {
+        //setLevelLog4j1(logger,level);
+        setLevelLog4j2(logger,level);
+        setLevelJUL(logger,level);
+    }
+
+    static public String getLevel(Logger logger) {
+        return getLevel(logger.getName());
+    }
+    
+    static public String getLevel(Class<? > logger) {
+        return getLevel(logger.getName());
+    }
+    
+    static public String getLevel(String logger) {
+        String s2 = getLevelLog4j2(logger);
+        if ( s2 != null )
+            return s2;
+        // Always present.
+        String s3 = getLevelJUL(logger);
+        if ( s3 != null )
+            return s3;
+        return null;
+    }
+
+    static private String getLevelJUL(String logger) {
+        java.util.logging.Level level = 
+            java.util.logging.Logger.getLogger(logger).getLevel();
+        if ( level == null )
+            return null;
+        if ( level == java.util.logging.Level.SEVERE )
+            return "ERROR";
+        return level.getName();
+    }
+    
+    static private String getLevelLog4j2(String logger) {
+        if ( ! hasLog4j2 )
+            return null;
+        org.apache.logging.log4j.Level level = org.apache.logging.log4j.LogManager.getLogger(logger).getLevel();
+        if ( level != null )   
+            return level.toString();            
+        return null;
+    }
+    
+    private static void setLevelJUL(String logger, String levelName) {
+        java.util.logging.Level level = java.util.logging.Level.ALL;
+        if ( levelName == null ) 
+            level = null;
+        else if ( levelName.equalsIgnoreCase("info") )
+            level = java.util.logging.Level.INFO;
+        else if ( levelName.equalsIgnoreCase("debug") )
+            level = java.util.logging.Level.FINE;
+        else if ( levelName.equalsIgnoreCase("warn") || levelName.equalsIgnoreCase("warning") ) 
+            level = java.util.logging.Level.WARNING;
+        else if ( levelName.equalsIgnoreCase("error") || levelName.equalsIgnoreCase("severe") )
+            level = java.util.logging.Level.SEVERE;
+        else if ( levelName.equalsIgnoreCase("OFF") )
+            level = java.util.logging.Level.OFF;
+        java.util.logging.Logger.getLogger(logger).setLevel(level);
+    }
+
+    private static void setLevelLog4j2(String logger, String levelName) {
+        if ( ! hasLog4j2 )
+            return;
+        org.apache.logging.log4j.Level level = org.apache.logging.log4j.Level.ALL;
+        if ( levelName == null ) 
+            level = null;
+        else if ( levelName.equalsIgnoreCase("info") )
+            level = org.apache.logging.log4j.Level.INFO;
+        else if ( levelName.equalsIgnoreCase("debug") )
+            level = org.apache.logging.log4j.Level.DEBUG;
+        else if ( levelName.equalsIgnoreCase("warn") || levelName.equalsIgnoreCase("warning") )
+            level = org.apache.logging.log4j.Level.WARN;
+        else if ( levelName.equalsIgnoreCase("error") || levelName.equalsIgnoreCase("severe") )
+            level = org.apache.logging.log4j.Level.ERROR;
+        else if ( levelName.equalsIgnoreCase("fatal") )
+            level = org.apache.logging.log4j.Level.FATAL;
+        else if ( levelName.equalsIgnoreCase("OFF") )
+            level = org.apache.logging.log4j.Level.OFF;
+        try {
+            // "try" : If log4j2 core is not on the path (everything else is log4j-api).
+            if ( !logger.equals("") )
+                org.apache.logging.log4j.core.config.Configurator.setLevel(logger, level);
+            else
+                org.apache.logging.log4j.core.config.Configurator.setRootLevel(level);
+        } catch (NoClassDefFoundError ex) {
+            Log.warnOnce(LogCtl.class, "Log4j2 Configurator not found", LogCtl.class);
+        }
     }
 
     /**
      * Turn on a logger (all levels). Works for Log4j and Java logging as the
      * logging provider to Apache common logging or slf4j.
      */
-    
     static public void enable(Logger logger) {
-        enable(logger.getName()) ;
+        enable(logger.getName());
     }
 
     static public void enable(String logger) {
-        setLevel(logger, "all") ;
+        setLevel(logger, "all");
     }
 
     /**
@@ -121,8 +163,7 @@ public class LogCtl {
      * logging provider to Apache common logging or slf4j.
      */
     static public void enable(Class<? > logger) {
-        org.apache.log4j.LogManager.getLogger(logger).setLevel(org.apache.log4j.Level.ALL) ;
-        java.util.logging.Logger.getLogger(logger.getName()).setLevel(java.util.logging.Level.ALL) ;
+        setLevel(logger.getName(), "ALL");
     }
 
     /**
@@ -130,7 +171,7 @@ public class LogCtl {
      * logging provider to Apache common logging or slf4j.
      */
     static public void disable(Logger logger) {
-        setLevel(logger.getName(), "OFF") ;
+        setLevel(logger.getName(), "OFF");
     }
 
     /**
@@ -138,7 +179,7 @@ public class LogCtl {
      * logging provider to Apache common logging or slf4j.
      */
     static public void disable(String logger) {
-        setLevel(logger, "OFF") ;
+        setLevel(logger, "OFF");
     }
 
     /**
@@ -146,7 +187,7 @@ public class LogCtl {
      * logging provider to Apache common logging or slf4j.
      */
     static public void disable(Class<? > logger) {
-        setLevel(logger.getName(), "OFF") ;
+        setLevel(logger.getName(), "OFF");
     }
 
     /**
@@ -154,7 +195,7 @@ public class LogCtl {
      * provider to Apache common logging or slf4j.
      */
     static public void setInfo(String logger) {
-        setLevel(logger, "info") ;
+        setLevel(logger, "info");
     }
 
     /**
@@ -162,7 +203,7 @@ public class LogCtl {
      * provider to Apache common logging or slf4j.
      */
     static public void setInfo(Class<? > logger) {
-        setLevel(logger.getName(), "info") ;
+        setLevel(logger.getName(), "info");
     }
 
     /**
@@ -170,7 +211,7 @@ public class LogCtl {
      * provider to Apache common logging or slf4j.
      */
     static public void setWarn(String logger) {
-        setLevel(logger, "warn") ;
+        setLevel(logger, "warn");
     }
 
     /**
@@ -178,7 +219,7 @@ public class LogCtl {
      * provider to Apache common logging or slf4j.
      */
     static public void setWarn(Class<? > logger) {
-        setLevel(logger.getName(), "warn") ;
+        setLevel(logger.getName(), "warn");
     }
 
     /**
@@ -186,7 +227,7 @@ public class LogCtl {
      * provider to Apache common logging or slf4j.
      */
     static public void setError(String logger) {
-        setLevel(logger, "error") ;
+        setLevel(logger, "error");
     }
 
     /**
@@ -194,91 +235,121 @@ public class LogCtl {
      * provider to Apache common logging or slf4j.
      */
     static public void setError(Class<? > logger) {
-        setLevel(logger.getName(), "error") ;
+        setLevel(logger.getName(), "error");
     }
 
-    private static String log4Jsetup = StrUtils.strjoinNL
-        ( "## Command default log4j setup"
-         
-          ,"## Plain output with level, to stderr"
-          ,"log4j.appender.jena.plainlevel=org.apache.log4j.ConsoleAppender"
-          ,"log4j.appender.jena.plainlevel.target=System.err"
-          ,"log4j.appender.jena.plainlevel.layout=org.apache.log4j.PatternLayout"
-          ,"log4j.appender.jena.plainlevel.layout.ConversionPattern=%-5p %m%n"
+    private static String log4j2setup = StrUtils.strjoinNL
+        ( "## Command default log4j2 setup : log4j2 properties syntax."
+        , "status = error"
+        , "name = PropertiesConfig"
+        , "filters = threshold"
+        , ""
+        , "filter.threshold.type = ThresholdFilter"
+        , "filter.threshold.level = INFO"
 
-//          , "## Plain output to stdout, unadorned output format"
-//          ,"log4j.appender.jena.plain=org.apache.log4j.ConsoleAppender"
-//          ,"log4j.appender.jena.plain.target=System.out"
-//          ,"log4j.appender.jena.plain.layout=org.apache.log4j.PatternLayout"
-//          ,"log4j.appender.jena.plain.layout.ConversionPattern=%m%n"
+        , "appender.console.type = Console"
+        , "appender.console.name = OUT"
+        , "appender.console.target = SYSTEM_ERR"
+        , "appender.console.layout.type = PatternLayout"
+        , "appender.console.layout.pattern = %d{HH:mm:ss} %-5p %-10c{1} :: %m%n"
+        , "#appender.console.layout.pattern = [%d{yyyy-MM-dd HH:mm:ss}] %-5p %-10c{1} :: %m%n"
 
-          ,"## Everything"
-          ,"log4j.rootLogger=INFO, jena.plainlevel"
-          ,"log4j.logger.com.hp.hpl.jena=WARN"
-          ,"log4j.logger.org.apache.jena=WARN"
-          ,"log4j.logger.org.apache.jena.tdb.loader=INFO"
-          ,"log4j.logger.org.apache.jena.tdb2.loader=INFO"
+        , "rootLogger.level                  = INFO"
+        , "rootLogger.appenderRef.stdout.ref = OUT"
 
-          , "## Parser output"
-          , "log4j.additivity.org.apache.jena.riot=false"
-          , "log4j.logger.org.apache.jena.riot=INFO, jena.plainlevel"
-         ) ;
+        , "logger.jena.name  = org.apache.jena"
+        , "logger.jena.level = INFO"
+
+        , "logger.arq-exec.name  = org.apache.jena.arq.exec"
+        , "logger.arq-exec.level = INFO"
+
+        , "logger.riot.name  = org.apache.jena.riot"
+        , "logger.riot.level = INFO"
+        );
+
     /**
      * Set logging
      * <ol>
-     * <li>Check for -Dlog4j.configuration.</li>
+     * <li>Check for -Dlog4j.configurationFile.</li>
      * <li>Looks for log4j.properties file in current directory.</li>
      * </ol>
      * Return true if we think Log4J is not initialized.
      */
     
     public static void setLog4j() {
-        if ( System.getProperty("log4j.configuration") == null ) {
-            String fn = "log4j.properties" ;
-            File f = new File(fn) ;
-            if ( f.exists() )
-                System.setProperty("log4j.configuration", "file:" + fn) ;
+        System.err.println("Log4j1 supported removed. Please use setLog4j2.");
+    }
+    
+    /** Set log4j properties (XML or properties file) */
+    public static void setLog4j(String filename) {
+        System.err.println("Log4j1 supported removed. Please use setLog4j2.");
+    }
+    
+    private static String[] log4j2files = {"log4j2.properties","log4j2.xml"};
+    
+    public static void setLog4j2() {
+        if ( System.getProperty("log4j2.configurationFile") == null ) {
+            for ( String fn : log4j2files ) {
+                File f = new File(fn);
+                if ( f.exists() )
+                    System.setProperty("log4j.configurationFile", "file:" + fn);
+            }
+        }
+    }
+    
+    public static void setLog4j2(String filename) {
+        if ( ! filename.startsWith("file:") )
+            filename = "file:"+filename;
+        System.setProperty("log4j.configurationFile", "file:" + filename);
+    }
+    
+    /**
+     * Set logging, suitable for a command line application.
+     * If "log4j.configurationFile" not set, then use the built-in default, 
+     * else just leave to log4j2 startup.
+     */
+    public static void setCmdLogging() {
+        setCmdLogging(log4j2setup);
+    }
+
+    /**
+     * Set logging, suitable for a command line application.
+     * If "log4j.configurationFile" not set, then use the provided default 
+     * (log4j2 properties syntax) else just leave to log4j2 startup.
+     */
+    public static void setCmdLogging(String defaultConfig) {
+        if (System.getProperty("log4j.configurationFile") == null ) {
+            resetLogging(defaultConfig);
+            System.setProperty("log4j.configurationFile", "set");
         }
     }
 
-    /** Set log4j properties (XML or properties file) */
-    public static void setLog4j(String filename) {
-        if ( filename.toLowerCase().endsWith(".xml") )
-            DOMConfigurator.configure(filename) ;
+    /**
+     * Reset logging (log4j2). log4j2.properties format.
+     */
+    public static void resetLogging(String configString) {
+        if ( hasLog4j1 ) {
+            System.err.println("WARNING: slf4j-log4j1 adapter detected. Use log4j2.");
+        }
+        if ( ! hasLog4j2 )
+            return;
+
+        // Dispatch name to syntax.
+        try ( InputStream inputStream = new ByteArrayInputStream(StrUtils.asUTF8bytes(configString)) ) {
+            resetLogging(inputStream, ".properties");
+        } catch (IOException ex) { IO.exception(ex); }
+    }
+
+    private static void resetLogging(InputStream inputStream, String syntaxHint) throws IOException {
+        org.apache.logging.log4j.core.config.ConfigurationSource source = new org.apache.logging.log4j.core.config.ConfigurationSource(inputStream);
+        org.apache.logging.log4j.core.config.ConfigurationFactory factory;
+        if ( syntaxHint.endsWith(".properties" ) )
+            factory = new org.apache.logging.log4j.core.config.properties.PropertiesConfigurationFactory();
         else
-            PropertyConfigurator.configure(filename) ;
-    }
+            factory = org.apache.logging.log4j.core.config.ConfigurationFactory.getInstance();
 
-    /**
-     * Set logging, suitable for a command line application.
-     * If "log4j.configuration" not set, then use the built-in default, 
-     * else just leave to log4j startup.
-     */
-    public static void setCmdLogging() {
-        setCmdLogging(log4Jsetup) ;
-    }
-
-    /**
-     * Set logging, suitable for a command line application.
-     * If "log4j.configuration" not set, then use the provided default 
-     * (log4j properties syntax) else just leave to log4j startup.
-     */
-    public static void setCmdLogging(String defaultConfig) {
-        if (System.getProperty("log4j.configuration") == null )
-            resetLogging(defaultConfig) ;
-    }
-
-    /**
-     * Reset logging (log4j).
-     */
-    public static void resetLogging(String config) {
-        Properties p = new Properties() ;
-        InputStream in = new ByteArrayInputStream(StrUtils.asUTF8bytes(config)) ;
-        try {
-            p.load(in) ;
-        } catch (IOException ex) {}
-        PropertyConfigurator.configure(p) ;
-        System.setProperty("log4j.configuration", "set") ;
+        org.apache.logging.log4j.core.config.Configuration configuration = factory.getConfiguration(null, source);
+        org.apache.logging.log4j.core.config.Configurator.initialize(configuration);
     }
 
     // ---- java.util.logging - because that's always present.
@@ -289,7 +360,7 @@ public class LogCtl {
         //,"org.apache.jena.atlas.logging.java.ConsoleHandlerStream.level=INFO"
         //,"org.apache.jena.atlas.logging.java.ConsoleHandlerStream.formatter=org.apache.jena.atlas.logging.java.TextFormatter"
         //,"org.apache.jena.atlas.logging.java.TextFormatter.format=%5$tT %3$-5s %2$-20s :: %6$s"
-        ) ;
+        );
     // File or java resource name default.
     private static String JUL_LOGGING = "logging.properties";
     
@@ -305,21 +376,21 @@ public class LogCtl {
         resetJavaLogging();
     }
     
-    /** Reset java.util.logging - this overrided the previous configuration, if any. */  
+    /** Reset java.util.logging - this overrides the previous configuration, if any. */  
     public static void resetJavaLogging() {
-        Path p = Paths.get(JUL_LOGGING) ;
+        Path p = Paths.get(JUL_LOGGING);
         if ( Files.exists(p) ) {
-            setJavaLogging(JUL_LOGGING) ;
-            return ;
+            setJavaLogging(JUL_LOGGING);
+            return;
         }
         if ( setJavaLoggingClasspath(JUL_LOGGING) )
-            return ;
+            return;
         setJavaLoggingDft();
     }
 
     private static void readJavaLoggingConfiguration(InputStream details) throws Exception {
         System.setProperty(JUL_PROPERTY, "set");
-        java.util.logging.LogManager.getLogManager().readConfiguration(details) ;
+        java.util.logging.LogManager.getLogManager().readConfiguration(details);
     }
     
     private static boolean setJavaLoggingClasspath(String resourceName) {
@@ -327,10 +398,10 @@ public class LogCtl {
         InputStream in = LogCtl.class.getClassLoader().getResourceAsStream(resourceName);
         if ( in != null ) {
             try {
-                readJavaLoggingConfiguration(in) ;
+                readJavaLoggingConfiguration(in);
                 return true; 
             } catch (Exception ex) {
-                throw new AtlasException(ex) ;
+                throw new AtlasException(ex);
             }
         }
         return false;
@@ -338,20 +409,20 @@ public class LogCtl {
 
     public static void setJavaLogging(String file) {
         try {
-            InputStream details = new FileInputStream(file) ;
-            details = new BufferedInputStream(details) ;
-            readJavaLoggingConfiguration(details) ;
+            InputStream details = new FileInputStream(file);
+            details = new BufferedInputStream(details);
+            readJavaLoggingConfiguration(details);
         } catch (Exception ex) {
-            throw new AtlasException(ex) ;
+            throw new AtlasException(ex);
         }
     }
 
     public static void setJavaLoggingDft() {
         try {
-            InputStream details = new ByteArrayInputStream(defaultProperties.getBytes("UTF-8")) ;
-            readJavaLoggingConfiguration(details) ;
+            InputStream details = new ByteArrayInputStream(defaultProperties.getBytes("UTF-8"));
+            readJavaLoggingConfiguration(details);
         } catch (Exception ex) {
-            throw new AtlasException(ex) ;
+            throw new AtlasException(ex);
         }
     }
 }

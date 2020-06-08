@@ -24,6 +24,7 @@ import java.util.concurrent.Callable;
 import org.apache.jena.atlas.lib.Cache;
 import org.apache.jena.atlas.lib.CacheFactory;
 import org.apache.jena.atlas.lib.IRILib;
+import org.apache.jena.atlas.logging.Log;
 import org.apache.jena.iri.IRI;
 import org.apache.jena.iri.IRIException;
 import org.apache.jena.iri.IRIFactory;
@@ -186,7 +187,7 @@ public abstract class IRIResolver
         try {
             cwd = iriFactory().construct(globalBase);
         } catch (IRIException e) {
-            System.err.println("Unexpected IRIException in initializer: " + e.getMessage());
+            Log.error(IRIResolver.class, "Unexpected IRIException in initializer: " + e.getMessage());
             cwd = iriFactory().create("file:///");
             e.printStackTrace(System.err);
         }
@@ -273,10 +274,13 @@ public abstract class IRIResolver
         return exceptions(globalResolver.resolve(uriStr));
     }
 
-    /*
-     * No exception thrown by this method.
+    /**
+     * Resolve a string against a base.
+     * <p>
+     * No exceptions thrown by this method; the application should test the returned
+     * IRI for violations with {@link IRI#hasViolation(boolean)}.
      */
-    static private IRI resolveIRI(String relStr, String baseStr) {
+    public static IRI resolveIRI(String relStr, String baseStr) {
         IRI i = iriFactory().create(relStr);
         if (i.isAbsolute())
             // removes excess . segments

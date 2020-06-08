@@ -35,9 +35,6 @@ import org.apache.jena.query.QueryFactory ;
 import org.apache.jena.sparql.algebra.op.OpBGP ;
 import org.apache.jena.sparql.algebra.op.OpService ;
 import org.apache.jena.sparql.core.BasicPattern ;
-import org.apache.jena.sparql.engine.http.QueryEngineHTTP ;
-import org.apache.jena.sparql.engine.http.QueryExceptionHTTP ;
-import org.apache.jena.sparql.engine.http.Service ;
 import org.apache.jena.sparql.modify.UpdateProcessRemoteBase ;
 import org.apache.jena.sparql.util.Context ;
 import org.apache.jena.update.UpdateExecutionFactory ;
@@ -48,8 +45,13 @@ import org.junit.Assert ;
 import org.junit.BeforeClass ;
 import org.junit.Test ;
 
+/** This test suite does external network traffic.
+ *  It causes INFO level messages if the network interface is not reachable.
+ *  It does not cause tests to fail. 
+ */
 public class TestService {
-    private static final String SERVICE = "http://example.com:40000";
+    // TODO Move to jena-integration-tests and use a Fuskei server as target.
+    private static final String SERVICE = "http://example.com:40000/";
 
     private static Object value ;
     

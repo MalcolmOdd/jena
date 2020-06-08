@@ -26,6 +26,6 @@ public class TestPrefixMapOverPrefixMapI extends AbstractTestPrefixMap {
     @Override
     protected PrefixMap getPrefixMap() {
         PrefixMapI pmapi = PrefixesFactory.createMem();
-        return PrefixMapOverPrefixMapI.create(pmapi);
+        return pmapi;
     }
 }

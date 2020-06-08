@@ -32,6 +32,7 @@ import org.apache.jena.sparql.core.* ;
 import org.apache.jena.sparql.engine.binding.Binding ;
 import org.apache.jena.sparql.expr.Expr ;
 import org.apache.jena.sparql.expr.ExprAggregator ;
+import org.apache.jena.sparql.expr.ExprTransform ;
 import org.apache.jena.sparql.expr.ExprVar ;
 import org.apache.jena.sparql.expr.aggregate.Aggregator ;
 import org.apache.jena.sparql.serializer.QuerySerializerFactory ;
@@ -39,6 +40,7 @@ import org.apache.jena.sparql.serializer.SerializerRegistry ;
 import org.apache.jena.sparql.syntax.Element ;
 import org.apache.jena.sparql.syntax.PatternVars ;
 import org.apache.jena.sparql.syntax.Template ;
+import org.apache.jena.sparql.syntax.syntaxtransform.* ;
 import org.apache.jena.sparql.util.FmtUtils ;
 import org.apache.jena.sys.JenaSystem ;
 
@@ -129,11 +131,8 @@ public class Query extends Prologue implements Cloneable, Printable
     }
 
     // Allocate variables that are unique to this query.
-    private VarAlloc varAlloc = new VarAlloc(ARQConstants.allocVarMarker) ;
+    private VarAlloc varAlloc = new VarAlloc(ARQConstants.allocQueryVariables) ;
     private Var allocInternVar() { return varAlloc.allocVar() ; }
-
-    //private VarAlloc varAnonAlloc = new VarAlloc(ARQConstants.allocVarAnonMarker) ;
-    //public Var allocVarAnon() { return varAnonAlloc.allocVar() ; }
 
     public void setQuerySelectType()            { queryType = QueryType.SELECT ; }
     public void setQueryConstructType()         { queryType = QueryType.CONSTRUCT ; queryResultStar = true ; }
@@ -480,13 +479,12 @@ public class Query extends Prologue implements Cloneable, Printable
         {
             Expr expr = varExprList.getExpr(v) ;
             if ( expr != null )
-
                 // SELECT (?a+?b AS ?x) ?x
                 throw new QueryBuildException("Duplicate variable (had an expression) in result projection '"+v+"'") ;
             // SELECT ?x ?x
             if ( ! ARQ.allowDuplicateSelectColumns )
                 return ;
-            // else drop thorugh and have two variables of the same name.
+            // else drop through and have two variables of the same name.
         }
         varExprList.add(v) ;
     }
@@ -665,15 +663,33 @@ public class Query extends Prologue implements Cloneable, Printable
     public List<Node> getResultURIs() { return resultNodes ; }
 
     private boolean resultVarsSet = false ;
-    /** Fix up when the query has "*" (when SELECT * or DESCRIBE *)
-     *  and for a construct query.  This operation is idempotent.
+    /**
+     * Set the results variables if necessary, when the query has "*" ({@code SELECT *}
+     * or {@code DESCRIBE *}) and for a construct query. This operation is idempotent and can
+     * be called to ensure the results variables have been set.
      */
     public void setResultVars()
     {
         if ( resultVarsSet )
             return ;
-        resultVarsSet = true ;
+        synchronized(this) {
+            if ( resultVarsSet )
+                return;
+            // Synchronized in case this query is used in a multithreaded
+            // situation calling setResultVars(). JENA-1861.
+            resetResultVars();
+            resultVarsSet = true ;
+        }
+    }
 
+    /**
+     * If modifying a query, it may be necessary to reset the calculate of the result
+     * variables of the query for {@code SELECT *} and {@code DESCRIBE *} and {@code CONSTRUCT}.
+     */
+    public void resetResultVars() {
+        if  ( isQueryResultStar() )
+            projectVars.clear();
+        
         if ( getQueryPattern() == null )
         {
             if ( ! this.isDescribeType() )
@@ -701,7 +717,6 @@ public class Query extends Prologue implements Cloneable, Printable
                 findAndAddNamedVars() ;
             return ;
         }
-
 //        if ( isAskType() )
 //        {}
     }
@@ -727,9 +742,7 @@ public class Query extends Prologue implements Cloneable, Printable
 
         for ( ; varIter.hasNext() ; )
         {
-            Object obj = varIter.next() ;
-            //Var var = (Var)iter.next() ;
-            Var var = (Var)obj ;
+            Var var = varIter.next() ;
             if ( var.isNamedVar() )
                 addResultVar(var) ;
         }
@@ -765,14 +778,15 @@ public class Query extends Prologue implements Cloneable, Printable
     public Object clone() { return cloneQuery() ; }
 
     /**
-     * Makes a copy of this query.  Copies by parsing a query from the serialized form of this query
+     * Makes a copy of this query using the syntax transform machinery.
      * @return Copy of this query
      */
     public Query cloneQuery() {
-        // A little crude.
-        // Must use toString() rather than serialize() because we may not know how to serialize extended syntaxes
-        String qs = this.toString();
-        return QueryFactory.create(qs, getSyntax()) ;
+        ElementTransform eltTransform = new ElementTransformCopyBase(true);
+        ExprTransform exprTransform = new ExprTransformApplyElementTransform(eltTransform, true);
+
+        Query result = QueryTransformOps.transform(this, eltTransform, exprTransform);
+        return result;
     }
 
     // ---- Query canonical syntax

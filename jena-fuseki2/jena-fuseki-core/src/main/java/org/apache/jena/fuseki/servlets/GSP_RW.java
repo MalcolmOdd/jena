@@ -18,22 +18,17 @@
 
 package org.apache.jena.fuseki.servlets;
 
+import static org.apache.jena.fuseki.servlets.GraphTarget.determineTargetGSP;
 import static org.apache.jena.riot.WebContent.ctMultipartMixed;
 import static org.apache.jena.riot.WebContent.matchContentType;
 
-import java.util.Map;
-import java.util.function.Supplier;
-
 import org.apache.jena.atlas.web.ContentType;
-import org.apache.jena.atlas.web.MediaType;
-import org.apache.jena.fuseki.DEF;
-import org.apache.jena.fuseki.system.ConNeg;
 import org.apache.jena.fuseki.system.FusekiNetLib;
 import org.apache.jena.fuseki.system.Upload;
 import org.apache.jena.fuseki.system.UploadDetails;
-import org.apache.jena.fuseki.system.UploadDetails.PreState;
 import org.apache.jena.graph.Graph;
 import org.apache.jena.riot.RiotException;
+import org.apache.jena.riot.RiotParseException;
 import org.apache.jena.riot.system.StreamRDF;
 import org.apache.jena.riot.system.StreamRDFLib;
 import org.apache.jena.riot.web.HttpNames;
@@ -49,7 +44,7 @@ public class GSP_RW extends GSP_R {
     @Override
     protected void doOptions(HttpAction action) {
         ActionLib.setCommonHeadersForOptions(action.response);
-        if ( hasGSPParams(action) )
+        if ( GSPLib.hasGSPParams(action) )
             action.response.setHeader(HttpNames.hAllow, "GET,HEAD,OPTIONS,PUT,DELETE,POST");
         else
             action.response.setHeader(HttpNames.hAllow, "GET,HEAD,OPTIONS,PUT,POST");
@@ -88,23 +83,22 @@ public class GSP_RW extends GSP_R {
 
     protected void execPutQuads(HttpAction action) { doPutPostQuads(action, true); }
 
-    protected void execDelete(Supplier<DatasetGraph> dataset, HttpAction action) {
-    }
-
-    public void execDeleteGSP(HttpAction action) {
+    protected void execDeleteGSP(HttpAction action) {
         action.beginWrite();
         boolean haveCommited = false;
         try {
             DatasetGraph dsg = decideDataset(action);
-            GSPTarget target = determineTarget(dsg, action);
+            GraphTarget target = determineTargetGSP(dsg, action);
             if ( action.log.isDebugEnabled() )
                 action.log.debug("DELETE->"+target);
+            if ( target.isUnion() )
+                ServletOps.errorBadRequest("Can't delete the union graph");
             boolean existedBefore = target.exists();
             if ( !existedBefore ) {
                 // Commit, not abort, because locking "transactions" don't support abort.
                 action.commit();
                 haveCommited = true;
-                ServletOps.errorNotFound("No such graph: "+target.name);
+                ServletOps.errorNotFound("No such graph: "+target.label());
             }
             deleteGraph(dsg, action);
             action.commit();
@@ -119,32 +113,6 @@ public class GSP_RW extends GSP_R {
     protected void execDeleteQuads(HttpAction action) {
         // Don't allow whole-database DELETE. 
         ServletOps.errorMethodNotAllowed("DELETE");
-    }
-
-    /** Test whether the operation has either of the GSP parameters. */ 
-    public static boolean hasGSPParams(HttpAction action) {
-        if ( action.request.getQueryString() == null )
-            return false;
-        boolean hasParamGraphDefault = action.request.getParameter(HttpNames.paramGraphDefault) != null;
-        if ( hasParamGraphDefault )
-            return true;
-        boolean hasParamGraph = action.request.getParameter(HttpNames.paramGraph) != null;
-        if ( hasParamGraph )
-            return true;
-        return false;
-    }
-
-    /** Test whether the operation has exactly one GSP parameter and no other parameters. */ 
-    public static boolean xasGSPParamsStrict(HttpAction action) {
-        if ( action.request.getQueryString() == null )
-            return false;
-        Map<String, String[]> params = action.request.getParameterMap();
-        if ( params.size() != 1 )
-            return false;
-        boolean hasParamGraphDefault = GSPLib.hasExactlyOneValue(action, HttpNames.paramGraphDefault);
-        boolean hasParamGraph = GSPLib.hasExactlyOneValue(action, HttpNames.paramGraph);
-        // Java XOR
-        return hasParamGraph ^ hasParamGraphDefault;
     }
 
     protected void doPutPostGSP(HttpAction action, boolean overwrite) {
@@ -162,18 +130,12 @@ public class GSP_RW extends GSP_R {
         else
             details = addDataIntoNonTxn(action, overwrite);
 
-        MediaType mt = ConNeg.chooseCharset(action.request, DEF.jsonOffer, DEF.acceptJSON);
-
-        if ( mt == null ) {
-            // No return body.
-            if ( details.getExistedBefore().equals(PreState.ABSENT) )
-                ServletOps.successCreated(action);
-            else
-                ServletOps.successNoContent(action);
-            return;
-        }
         ServletOps.uploadResponse(action, details);
     }
+    
+    // Refcatoring:
+    //   Make doPutPost and doPustPosyQuads teh same pattern.
+    //   addDataInto*: Extract commonality in error handling. 
 
     /** Directly add data in a transaction.
      * Assumes recovery from parse errors by transaction abort.
@@ -186,9 +148,11 @@ public class GSP_RW extends GSP_R {
         action.beginWrite();
         try {
             DatasetGraph dsg = decideDataset(action);
-            GSPTarget target = determineTarget(dsg, action);
+            GraphTarget target = determineTargetGSP(dsg, action);
             if ( action.log.isDebugEnabled() )
                 action.log.debug(action.request.getMethod().toUpperCase()+"->"+target);
+            if ( target.isUnion() )
+                ServletOps.errorBadRequest("Can't delete the union graph");
             boolean existedBefore = target.exists();
             Graph g = target.graph();
             if ( overwrite && existedBefore )
@@ -202,6 +166,10 @@ public class GSP_RW extends GSP_R {
             // Any ServletOps.error from calls in the try{} block.
             action.abort();
             throw ex;
+        } catch (RiotParseException ex) {
+            action.abort();
+            ServletOps.errorParseError(ex);
+            return null;
         } catch (RiotException ex) {
             // Parse error
             action.abort();
@@ -231,21 +199,23 @@ public class GSP_RW extends GSP_R {
 
         UploadDetails details;
         try { details = Upload.incomingData(action, dest); }
-        catch (RiotException ex) {
-            ServletOps.errorBadRequest(ex.getMessage());
+        catch (RiotParseException ex) {
+            ServletOps.errorParseError(ex);
             return null;
         }
         // Now insert into dataset
         action.beginWrite();
         try {
             DatasetGraph dsg = decideDataset(action);
-            GSPTarget target = determineTarget(dsg, action);
+            GraphTarget target = determineTargetGSP(dsg, action);
             if ( action.log.isDebugEnabled() )
                 action.log.debug("  ->"+target);
+            if ( target.isUnion() )
+                ServletOps.errorBadRequest("Can't delete the union graph");
             boolean existedBefore = target.exists();
             if ( overwrite && existedBefore )
                 clearGraph(target);
-            FusekiNetLib.addDataInto(graphTmp, target.dsg, target.graphName);
+            FusekiNetLib.addDataInto(graphTmp, target.dataset(), target.graphName());
             details.setExistedBefore(existedBefore);
             action.commit();
             return details;
@@ -264,21 +234,22 @@ public class GSP_RW extends GSP_R {
      * The default graph is cleared, not removed.
      */
     protected static void deleteGraph(DatasetGraph dsg, HttpAction action) {
-        GSPTarget target = determineTarget(dsg, action);
-        if ( target.isDefault )
+        GraphTarget target = determineTargetGSP(dsg, action);
+        if ( target.isDefault() )
             clearGraph(target);
         else
-            dsg.removeGraph(target.graphName);
+            target.dataset().removeGraph(target.graphName());
     }
 
     /** Clear a graph - this leaves the storage choice and setup in-place */
-    protected static void clearGraph(GSPTarget target) {
+    protected static void clearGraph(GraphTarget target) {
         Graph g = target.graph();
         g.getPrefixMapping().clearNsPrefixMap();
         g.clear();
     }
 
     // ---- Quads
+    // XXX Make like doPutPost
     
     protected void doPutPostQuads(HttpAction action, boolean overwrite) {
         // See doPutPostGSP

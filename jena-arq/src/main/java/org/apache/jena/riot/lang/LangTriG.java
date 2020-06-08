@@ -110,7 +110,6 @@ public class LangTriG extends LangTurtleBase {
                 expectEndOfTriplesTurtle() ;
                 return ;
             }
-
         } else if ( token.isNode() ) {
             // Either :s :p :o or :g { ... }
             Node n = node() ;
@@ -128,7 +127,11 @@ public class LangTriG extends LangTurtleBase {
             // Turtle - list
             turtle() ;
             return ;
-        }
+        } else if ( lookingAt(LT2) ) {
+            // <<:s :p :o>> :q :z -- Turtle*
+            turtle() ;
+            return;
+        }            
 
         if ( mustBeNamedGraph && graphNode == null )
             exception(t, "Keyword 'GRAPH' must be followed by a graph name") ;
@@ -259,8 +262,8 @@ public class LangTriG extends LangTurtleBase {
     protected void emit(Node subject, Node predicate, Node object) {
         Node graph = getCurrentGraph() ;
 
-        if ( graph == Quad.defaultGraphNodeGenerated )
-            graph = Quad.tripleInQuad ;
+        if ( graph == Quad.tripleInQuad )
+            graph = Quad.defaultGraphNodeGenerated;
 
         Quad quad = profile.createQuad(graph, subject, predicate, object, currLine, currCol) ;
         dest.quad(quad) ;

@@ -24,7 +24,7 @@
   <parent>
     <groupId>org.apache.jena</groupId>
     <artifactId>jena</artifactId>
-    <version>3.15.0-SNAPSHOT</version>
+    <version>3.16.0-SNAPSHOT</version>
     <relativePath>..</relativePath>
   </parent>
 
@@ -41,14 +41,14 @@
     <dependency>
       <groupId>org.apache.jena</groupId>
       <artifactId>jena-core</artifactId>
-      <version>3.15.0-SNAPSHOT</version>
+      <version>3.16.0-SNAPSHOT</version>
     </dependency>
 
     <dependency>
       <groupId>org.apache.jena</groupId>
       <artifactId>jena-core</artifactId>
       <classifier>tests</classifier>
-      <version>3.15.0-SNAPSHOT</version>
+      <version>3.16.0-SNAPSHOT</version>
       <scope>test</scope>
     </dependency>
 
@@ -56,14 +56,14 @@
       <groupId>org.apache.jena</groupId>
       <artifactId>jena-base</artifactId>
       <classifier>tests</classifier>
-      <version>3.15.0-SNAPSHOT</version>
+      <version>3.16.0-SNAPSHOT</version>
       <scope>test</scope>
     </dependency>
 
     <dependency>
       <groupId>org.apache.jena</groupId>
       <artifactId>jena-shaded-guava</artifactId>
-      <version>3.15.0-SNAPSHOT</version>
+      <version>3.16.0-SNAPSHOT</version>
     </dependency>
 
     <dependency>
@@ -112,8 +112,20 @@
     </dependency>
 
     <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
       <groupId>org.awaitility</groupId>
       <artifactId>awaitility</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-slf4j-impl</artifactId>
       <scope>test</scope>
     </dependency>
 
@@ -150,10 +162,10 @@
         <configuration>
           <includes>
             <!--
-          The test collections TC_General, TC_Riot, TC_Atlas
-          are development support that collect the relevant
-          tests for partial testing during development.
-        -->
+                The test collections TC_General, TC_Riot, TC_Atlas
+                are development support that collect the relevant
+                tests for partial testing during development.
+            -->
             <include>**/TS_*.java</include>
             <include>**/TC_Scripted.java</include>
             <include>**/TC_DAWG.java</include>

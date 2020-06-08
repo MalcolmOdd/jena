@@ -62,7 +62,8 @@ import org.apache.jena.sparql.expr.*;
 import org.apache.jena.sparql.util.DateTimeStruct ;
 /**
  * Implementation of XQuery/XPath functions and operators.
- * http://www.w3.org/TR/xpath-functions/ */
+ * http://www.w3.org/TR/xpath-functions/
+ */
 public class XSDFuncOp
 {
     private XSDFuncOp() {}
@@ -599,7 +600,6 @@ public class XSDFuncOp
         if ( nv.isInteger() )
             return nv.getInteger().intValue() ;
         if ( nv.isDecimal() )
-            // No decimal round in Java 1.4
             return (int)Math.round(nv.getDecimal().doubleValue()) ;
 
         if ( nv.isFloat() ) {
@@ -960,8 +960,6 @@ public class XSDFuncOp
     
     // --------------------------------
     // Date/DateTime operations
-    // http://www.w3.org/TR/xpath-functions/#comp.duration.datetime
-    //  dateTimeCompare
     // works for dates as well because they are implemented as dateTimes on their start point.
 
     public static int compareDateTime(NodeValue nv1, NodeValue nv2) {
@@ -1364,7 +1362,6 @@ public class XSDFuncOp
         return dtGetSeconds(nv) ;
     }
 
-    private static int F_UNDEF = DatatypeConstants.FIELD_UNDEFINED; 
     public static NodeValue dtDateTime(NodeValue nv1, NodeValue nv2) {
         if ( ! nv1.isDate() )
             throw new ExprEvalException("fn:dateTime: arg1: Not an xsd:date: "+nv1) ;
@@ -1390,7 +1387,7 @@ public class XSDFuncOp
         return NodeValue.makeDateTime(lex);
     }
     
-    // Datetime accessors
+    // Accessors: datetime, date, Gregorian.
     public static NodeValue dtGetYear(NodeValue nv) {
         if ( nv.isDateTime() || nv.isDate() || nv.isGYear() || nv.isGYearMonth() ) {
             DateTimeStruct dts = parseAnyDT(nv) ;
@@ -1412,7 +1409,7 @@ public class XSDFuncOp
             DateTimeStruct dts = parseAnyDT(nv) ;
             return NodeValue.makeNode(dts.day, XSDDatatype.XSDinteger) ;
         }
-        throw new ExprEvalException("Not a month datatype") ;
+        throw new ExprEvalException("Not a day datatype") ;
     }
 
     private static DateTimeStruct parseAnyDT(NodeValue nv) {

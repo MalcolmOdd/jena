@@ -30,9 +30,7 @@ import org.apache.jena.graph.Node ;
 import org.apache.jena.graph.NodeFactory ;
 import org.apache.jena.graph.impl.LiteralLabel ;
 import org.apache.jena.graph.impl.LiteralLabelFactory ;
-import org.apache.jena.reasoner.rulesys.Node_RuleVariable ;
 import org.apache.jena.sparql.core.Var ;
-import org.apache.jena.sparql.expr.ExprVar ;
 import org.apache.jena.vocabulary.RDF ;
 import org.junit.Before;
 import org.junit.Test;
@@ -99,9 +97,19 @@ public class AbstractQueryBuilderTest {
 		n = builder.makeNode("<one>");
 		assertEquals(NodeFactory.createURI("one"), n);
 
-		n = builder.makeNode(builder);
-		LiteralLabel ll = LiteralLabelFactory.createTypedLiteral(builder);
-		assertEquals(NodeFactory.createLiteral(ll), n);
+		try {
+			n = builder.makeNode(builder);
+			fail( "Should have thrown IllegalArgumentException");
+		} catch (IllegalArgumentException expected)
+		{
+			// do nothing
+		}
+		
+		n = builder.makeNode( Integer.valueOf( 5 ));
+		assertTrue( n.isLiteral() );
+		LiteralLabel ll = LiteralLabelFactory.createTypedLiteral( Integer.valueOf(5));
+		assertEquals( NodeFactory.createLiteral(ll), n );
+
 		
 		n = builder.makeNode( NodeFactory.createVariable("foo"));
 		assertTrue( n.isVariable());
@@ -109,45 +117,12 @@ public class AbstractQueryBuilderTest {
 		assertTrue( n instanceof Var );
 
 		n = builder.makeNode( "'text'@en");
+		assertTrue( n.isLiteral() );
 		assertEquals( "text", n.getLiteralLexicalForm());
 		assertEquals( "en", n.getLiteralLanguage());
 	}
 
-	@Test
-	public void testMakeVar() {
-		Var v = AbstractQueryBuilder.makeVar(null);
-		assertEquals(Var.ANON, v);
-
-		v = AbstractQueryBuilder.makeVar("a");
-		assertEquals(Var.alloc("a"), v);
-
-		v = AbstractQueryBuilder.makeVar("?a");
-		assertEquals(Var.alloc("a"), v);
-
-		Node n = NodeFactory.createVariable("foo");
-		v = AbstractQueryBuilder.makeVar(n);
-		assertEquals(Var.alloc("foo"), v);
-
-		NodeFront nf = new NodeFront(n);
-		v = AbstractQueryBuilder.makeVar(nf);
-		assertEquals(Var.alloc("foo"), v);
-
-		v = AbstractQueryBuilder.makeVar(Node_RuleVariable.WILD);
-		assertNull(v);
-
-		ExprVar ev = new ExprVar("bar");
-		v = AbstractQueryBuilder.makeVar(ev);
-		assertEquals(Var.alloc("bar"), v);
-
-		ev = new ExprVar(n);
-		v = AbstractQueryBuilder.makeVar(ev);
-		assertEquals(Var.alloc("foo"), v);
-
-		ev = new ExprVar(Var.ANON);
-		v = AbstractQueryBuilder.makeVar(ev);
-		assertEquals(Var.ANON, v);
-
-	}
+	
 
 	@Test
 	public void testMakeValueNodes()
@@ -160,16 +135,19 @@ public class AbstractQueryBuilderTest {
 		builder.addPrefix("demo", "http://example.com/");
 		list.add( "demo:type" );
 		list.add( "<one>" );
-		list.add( builder );
+		list.add( Integer.valueOf(5) );
 		
 		Collection<Node> result = builder.makeValueNodes(list.iterator());
 		
+		assertEquals( 6, result.size() );
 		assertTrue( result.contains( null ));
 		assertTrue( result.contains( RDF.type.asNode()));
 		assertTrue( result.contains( n2 ));
 		assertTrue( result.contains(NodeFactory.createURI("http://example.com/type") ));
 		assertTrue( result.contains(NodeFactory.createURI("one")));
-
+		LiteralLabel ll = LiteralLabelFactory.createTypedLiteral( Integer.valueOf(5));
+		assertTrue( result.contains(NodeFactory.createLiteral(ll)));
+		
 	}
 	
 }
